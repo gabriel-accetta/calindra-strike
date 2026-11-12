@@ -1,3 +1,4 @@
+import { TEAMS } from '@calindra-strike/shared';
 import { ICONS, h, svg } from './dom.ts';
 
 export interface LeaderRow {
@@ -17,6 +18,7 @@ export interface ScoreRow {
   hs: number;
   ping: number;
   me: boolean;
+  team: number;
 }
 
 export interface Marker {
@@ -56,7 +58,8 @@ export class Hud {
   private readonly dmgRing = h('div', { class: 'dmg-ring' });
   private readonly vignette = h('div', { class: 'vignette' });
   private readonly protect = h('div', { class: 'protect-vignette' });
-  private readonly scope = h('div', { class: 'scope hidden' }, [h('b')]);
+  private readonly scope = h('div', { class: 'scope hidden' });
+  private readonly teamBadge = h('div', { class: 'team-badge hidden' });
   private readonly center = h('div', { class: 'center' });
   private readonly dropAlt = h('div', { class: 'alt', text: '' });
   private readonly drop = h('div', { class: 'drop-hud glass hidden' }, [
@@ -104,7 +107,7 @@ export class Hud {
       this.markersEl,
       h('div', { class: 'topbar' }, [this.leadersLeft, this.timer, this.leadersRight]),
       this.feed,
-      h('div', { class: 'vitals' }, [this.hp, this.armor]),
+      h('div', { class: 'vitals' }, [this.teamBadge, this.hp, this.armor]),
       h('div', { class: 'ammo' }, [this.reloadBar, h('div', { class: 'main glass' }, [this.wBox, this.ammoCount]), this.slotsEl]),
       this.ch,
       this.hitm,
@@ -148,6 +151,28 @@ export class Hud {
       const right = [card(rows[2] ?? null, 3)];
       if (me && me.rank > 3) right.push(card(me, me.rank));
       this.leadersRight.replaceChildren(...right);
+    });
+  }
+
+  /** TDM top bar: Bulldogs score | timer | Martelos score. */
+  setTeams(scores: number[], limit: number, myTeam: number): void {
+    this.set('leaders', JSON.stringify(['tdm', scores, limit, myTeam]), () => {
+      const card = (t: number) =>
+        h('div', { class: `team-card glass${t === myTeam ? ' mine' : ''}`, style: `--team:${TEAMS[t].color}` }, [
+          h('div', { class: 'team-meta' }, [h('div', { class: 'team-name', text: TEAMS[t].name }), h('div', { class: 'k', text: limit ? `meta ${limit}` : t === myTeam ? 'seu time' : '' })]),
+          h('div', { class: 'team-score', text: String(scores[t] ?? 0) }),
+        ]);
+      this.leadersLeft.replaceChildren(card(0));
+      this.leadersRight.replaceChildren(card(1));
+    });
+  }
+
+  setTeamBadge(team: number): void {
+    this.set('badge', String(team), () => {
+      this.teamBadge.classList.toggle('hidden', team < 0);
+      if (team < 0) return;
+      this.teamBadge.textContent = TEAMS[team].name;
+      this.teamBadge.style.setProperty('--team', TEAMS[team].color);
     });
   }
 
@@ -307,23 +332,35 @@ export class Hud {
     } else this.chatInput.blur();
   }
 
-  showScoreboard(show: boolean, rows: ScoreRow[], title: string): void {
+  showScoreboard(show: boolean, rows: ScoreRow[], title: string, teams: number[] | null): void {
     this.scoreboard.classList.toggle('hidden', !show);
     if (!show) return;
-    this.set('sb', JSON.stringify([rows, title]), () => {
+    this.set('sb', JSON.stringify([rows, title, teams]), () => {
       this.sbTitle.textContent = title;
-      this.sbBody.replaceChildren(
-        ...rows.map((r, i) =>
-          h('tr', { class: r.me ? 'me' : '' }, [
-            h('td', { text: String(i + 1) }),
-            h('td', {}, [h('span', { class: 'pdot', style: `background:${r.color}` }), r.name]),
-            h('td', { text: String(r.kills) }),
-            h('td', { text: String(r.deaths) }),
-            h('td', { text: String(r.hs) }),
-            h('td', { text: String(r.ping) }),
+      const line = (r: ScoreRow, i: number) =>
+        h('tr', { class: r.me ? 'me' : '' }, [
+          h('td', { text: String(i + 1) }),
+          h('td', {}, [h('span', { class: 'pdot', style: `background:${r.color}` }), r.name]),
+          h('td', { text: String(r.kills) }),
+          h('td', { text: String(r.deaths) }),
+          h('td', { text: String(r.hs) }),
+          h('td', { text: String(r.ping) }),
+        ]);
+      if (!teams) {
+        this.sbBody.replaceChildren(...rows.map(line));
+        return;
+      }
+      const out: HTMLElement[] = [];
+      for (const t of [0, 1]) {
+        const mine = rows.filter((r) => r.team === t);
+        out.push(
+          h('tr', { class: 'team-row', style: `--team:${TEAMS[t].color}` }, [
+            h('td', { colspan: 6 }, [h('span', { class: 'team-name', text: TEAMS[t].name }), h('span', { class: 'team-total', text: `${teams[t] ?? 0} kills · ${mine.length} jogador${mine.length === 1 ? '' : 'es'}` })]),
           ]),
-        ),
-      );
+          ...mine.map(line),
+        );
+      }
+      this.sbBody.replaceChildren(...out);
     });
   }
 

@@ -1,10 +1,12 @@
-import { PLAYER_COLORS, PRIMARY_CHOICES, type ResultRow, type WeaponId, weaponDef } from '@calindra-strike/shared';
+import { PRIMARY_CHOICES, TEAMS, type WeaponId, weaponDef } from '@calindra-strike/shared';
+import type { PodiumData, TeamState } from '../game/client.ts';
 import { CROSSHAIR_COLORS, type Settings, saveSettings } from '../settings.ts';
 import { bulldogLogo, h } from './dom.ts';
 
 export interface OverlayHooks {
   resume(): void;
   leave(): void;
+  switchTeam(): void;
   settingsChanged(s: Settings): void;
 }
 
@@ -15,6 +17,10 @@ export class Overlays {
   private readonly podium: HTMLElement;
   private readonly podiumCards = h('div', { class: 'podium-cards' });
   private readonly podiumNext = h('div', { class: 'podium-next' });
+  private readonly podiumLabel = h('div', { class: 'label', text: 'fim de partida' });
+  private readonly podiumTitle = h('h2', { text: 'pódio' });
+  private readonly podiumScore = h('div', { class: 'podium-score hidden' });
+  private readonly teamRow = h('div', { class: 'team-switch hidden' });
   private nextMap = '';
   private lastSeconds = -1;
 
@@ -35,7 +41,7 @@ export class Overlays {
     ]);
     this.menu = h('div', { class: 'overlay hidden' }, [this.buildMenu()]);
     this.podium = h('div', { class: 'podium-ui hidden' }, [
-      h('div', { class: 'head' }, [bulldogLogo('bulldog podium-logo'), h('div', { class: 'label', text: 'fim de partida' }), h('h2', { text: 'pódio' })]),
+      h('div', { class: 'head' }, [bulldogLogo('bulldog podium-logo'), this.podiumLabel, this.podiumTitle, this.podiumScore]),
       h('div', {}, [this.podiumCards, this.podiumNext]),
     ]);
     root.append(this.podium, this.click, this.menu);
@@ -82,6 +88,7 @@ export class Overlays {
     return h('div', { class: 'menu glass' }, [
       h('h2', { text: 'pausado' }),
       h('p', { class: 'sub', text: 'O jogo continua rolando para os outros: volte logo.' }),
+      this.teamRow,
       seg(
         'arma principal',
         PRIMARY_CHOICES.map((id: WeaponId) => ({ v: id, label: weaponDef(id).name })),
@@ -129,26 +136,63 @@ export class Overlays {
     this.click.classList.toggle('hidden', !v);
   }
 
-  showMenu(v: boolean): void {
+  showMenu(v: boolean, team: TeamState | null = null): void {
     this.menu.classList.toggle('hidden', !v);
     if (v) this.click.classList.add('hidden');
+    if (v) this.renderTeamRow(team);
   }
 
-  showPodium(results: ResultRow[] | null, nextMap: string): void {
-    this.podium.classList.toggle('hidden', !results);
-    if (!results) return;
-    this.nextMap = nextMap;
+  private renderTeamRow(team: TeamState | null): void {
+    this.teamRow.classList.toggle('hidden', !team);
+    if (!team) return;
+    const mine = TEAMS[team.team];
+    const other = TEAMS[1 - team.team];
+    this.teamRow.replaceChildren(
+      h('div', { class: 'team-current', style: `--team:${mine.color}` }, [h('span', { class: 'label', text: 'seu time' }), h('b', { text: mine.name })]),
+      h('button', {
+        class: 'btn',
+        type: 'button',
+        style: `--team:${other.color}`,
+        disabled: !team.canSwitch,
+        title: team.canSwitch ? '' : 'O outro time já tem a mesma quantidade ou mais jogadores',
+        text: team.canSwitch ? `ir para os ${other.name}` : `${other.name}: time cheio`,
+        onclick: () => this.hooks.switchTeam(),
+      }),
+    );
+  }
+
+  showPodium(data: PodiumData | null, next: string): void {
+    this.podium.classList.toggle('hidden', !data);
+    if (!data) return;
+    this.nextMap = next;
     this.lastSeconds = -1;
+    const tdm = data.mode === 'tdm';
+    this.podiumScore.classList.toggle('hidden', !tdm);
+    if (tdm) {
+      const w = data.winner;
+      this.podiumLabel.textContent = w < 0 ? 'fim de partida · team deathmatch' : w === data.myTeam ? 'seu time venceu!' : 'não foi dessa vez';
+      this.podiumTitle.textContent = w < 0 ? 'empate' : `${TEAMS[w].name} venceram`;
+      this.podiumTitle.style.color = w < 0 ? '' : TEAMS[w].color;
+      this.podiumScore.replaceChildren(
+        h('span', { style: `color:${TEAMS[0].color}`, text: TEAMS[0].name }),
+        h('b', { text: `${data.teams[0] ?? 0} × ${data.teams[1] ?? 0}` }),
+        h('span', { style: `color:${TEAMS[1].color}`, text: TEAMS[1].name }),
+      );
+    } else {
+      this.podiumLabel.textContent = 'fim de partida';
+      this.podiumTitle.textContent = 'pódio';
+      this.podiumTitle.style.color = '';
+    }
     const order = [1, 0, 2];
     const cls = ['first', 'second', 'third'];
-    const place = ['1º lugar', '2º lugar', '3º lugar'];
+    const place = tdm && data.winner >= 0 ? ['mvp do time', '2º do time', '3º do time'] : ['1º lugar', '2º lugar', '3º lugar'];
     this.podiumCards.replaceChildren(
       ...order.map((i) => {
-        const r = results[i];
+        const r = data.featured[i];
         if (!r) return h('div');
         return h('div', { class: `pcard glass ${cls[i]}` }, [
           h('div', { class: 'place', text: place[i] }),
-          h('div', { class: 'pname', style: `color:${PLAYER_COLORS[r.color] ?? '#f0f0f0'}`, text: r.name }),
+          h('div', { class: 'pname', style: `color:${data.colorFor(r)}`, text: r.name }),
           h('div', { class: 'stats', text: `${r.kills} kills · ${r.deaths} mortes · ${r.hs} hs` }),
         ]);
       }),
@@ -158,7 +202,7 @@ export class Overlays {
   podiumCountdown(seconds: number): void {
     if (seconds === this.lastSeconds) return;
     this.lastSeconds = seconds;
-    this.podiumNext.replaceChildren('próxima partida em ', h('b', { text: `${seconds}s` }), ` · mapa ${this.nextMap}`);
+    this.podiumNext.replaceChildren('próxima partida em ', h('b', { text: `${seconds}s` }), this.nextMap ? ` · ${this.nextMap}` : '');
   }
 
   disconnected(reason: string, onBack: () => void): void {

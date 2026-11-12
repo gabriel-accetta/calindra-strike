@@ -11,6 +11,8 @@ interface Status {
   endsInMs: number | null;
   leaders: { name: string; kills: number }[];
   codeRequired: boolean;
+  mode?: 'ffa' | 'tdm';
+  teams?: number[] | null;
 }
 
 const TILE_ICONS = [
@@ -164,8 +166,8 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       ' com o time.',
     ]),
     h('div', { class: 'features' }, [
-      h('span', { class: 'chip' }, [h('i'), 'Todos contra todos']),
-      h('span', { class: 'chip' }, [h('i'), 'Suprimentos lendários']),
+      h('span', { class: 'chip' }, [h('i'), 'Team Deathmatch + todos contra todos']),
+      h('span', { class: 'chip' }, [h('i'), 'AWP no airdrop']),
       h('span', { class: 'chip' }, [h('i'), 'Pódio dos 3 melhores']),
       h('span', { class: 'chip' }, [h('i'), 'Bunny hop liberado']),
     ]),
@@ -176,7 +178,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       key('Shift', 'andar em silêncio'),
       key('1 2 3', 'armas · Q última'),
       key('R', 'recarregar'),
-      key('Mouse 2', 'mira da Mjölnir'),
+      key('Mouse 2', 'luneta da AWP'),
       key('Tab', 'placar · Y chat'),
     ]),
   ]);
@@ -207,12 +209,13 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       leaders.replaceChildren();
       return;
     }
+    const mode = status.mode === 'tdm' ? `team deathmatch${status.teams ? ` ${status.teams[0]}×${status.teams[1]}` : ''}` : 'todos contra todos';
     const phase =
       status.phase === 'live' && status.endsInMs !== null
-        ? `${status.map} · ${fmt(status.endsInMs)} restantes`
+        ? `${status.map} · ${mode} · ${fmt(status.endsInMs)}`
         : status.phase === 'podium'
           ? `${status.map} · pódio`
-          : `${status.map} · aquecimento`;
+          : `${status.map} · ${mode} · aquecimento`;
     sTitle.textContent = status.players > 0 ? 'Partida rolando' : 'Arena vazia: chegue primeiro';
     sSub.textContent = phase;
     sCount.textContent = `${status.players}/${status.maxPlayers} online`;

@@ -19,16 +19,28 @@ function bot(i: number): void {
   let seq = 0;
   let t = 0;
   let serverTime = 0;
+  let mode = 'ffa';
+  const teams = new Map<number, number>();
+  const setRoster = (r: [number, string, number, number][]) => {
+    teams.clear();
+    for (const [pid, , , team] of r) teams.set(pid, team);
+  };
   ws.on('open', () =>
     ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, name: `bot ${NAMES[i % NAMES.length]}`, color: (i * 5) % 12, primary: [WEAPON.RIFLE, WEAPON.SMG, WEAPON.SHOTGUN][i % 3] })),
   );
   ws.on('message', (d) => {
     const m = JSON.parse(String(d));
-    if (m.t === 'welcome') id = m.id;
+    if (m.t === 'welcome') {
+      id = m.id;
+      mode = m.match.mode;
+      setRoster(m.roster);
+    }
+    if (m.t === 'roster') setRoster(m.roster);
+    if (m.t === 'match') mode = m.match.mode;
     if (m.t === 'snap') {
       me = m.me;
       serverTime = m.time;
-      others = m.ps.filter((p: number[]) => p[0] !== id);
+      others = m.ps.filter((p: number[]) => p[0] !== id && !(mode === 'tdm' && teams.get(p[0]) === teams.get(id)));
     }
     if (m.t === 'reject') console.log('rejected', m.reason);
   });

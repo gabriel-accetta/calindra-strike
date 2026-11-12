@@ -13,6 +13,9 @@ const game = new Game({
   matchMs: cfg.matchMs,
   podiumMs: cfg.podiumMs,
   warmupMinPlayers: cfg.warmupMinPlayers,
+  modes: cfg.modes,
+  tdmLimit: cfg.tdmLimit,
+  airdropFirstMs: cfg.airdropFirstMs,
 });
 
 const MAX_CONNECTIONS = cfg.maxPlayers + 8;
@@ -204,6 +207,9 @@ function onConnection(ws: WebSocket, ip: string): void {
         case 'loadout':
           game.setLoadout(player, msg.primary);
           break;
+        case 'team':
+          game.switchTeam(player, msg.team);
+          break;
         case 'chat': {
           const text = sanitizeChat(msg.text);
           if (text) game.chat(player, text);
@@ -257,7 +263,7 @@ setInterval(() => {
 }, 60_000).unref();
 
 server.listen(cfg.port, cfg.host, () => {
-  log(`calindra-strike server on ${cfg.host}:${cfg.port}`, `origins=${[...cfg.allowedOrigins].join(',')}`, `code=${cfg.joinCode ? 'on' : 'off'}`);
+  log(`calindra-strike server on ${cfg.host}:${cfg.port}`, `origins=${[...cfg.allowedOrigins].join(',')}`, `code=${cfg.joinCode ? 'on' : 'off'}`, `modes=${cfg.modes}`, `tdmLimit=${cfg.tdmLimit}`);
 });
 
 process.on('uncaughtException', (err) => {

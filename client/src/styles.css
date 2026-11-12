@@ -990,10 +990,18 @@ input:focus-visible {
 }
 
 /* scope */
+/* CS 1.6 AWP scope: lens almost the full screen height, dark rim, thin black cross */
 .scope {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at center, transparent 0, transparent min(36vh, 36vw), #000 calc(min(36vh, 36vw) + 1px));
+  --r: min(48.5vh, 48.5vw);
+  background: radial-gradient(
+    circle at center,
+    transparent 0,
+    transparent calc(var(--r) - 10px),
+    rgba(0, 0, 0, 0.55) calc(var(--r) - 3px),
+    #000 var(--r)
+  );
 }
 
 .scope::before,
@@ -1017,17 +1025,6 @@ input:focus-visible {
   width: 1px;
 }
 
-.scope b {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 4px;
-  height: 4px;
-  margin: -2px;
-  border-radius: 50%;
-  background: var(--lime);
-  box-shadow: 0 0 8px var(--lime);
-}
 
 /* center announcements */
 .center {
@@ -1451,7 +1448,7 @@ input:focus-visible {
 
 .podium-ui h2 {
   margin: 6px 0 0;
-  font-size: clamp(40px, 6vw, 78px);
+  font-size: clamp(38px, 5vw, 66px);
   letter-spacing: -0.045em;
   text-transform: lowercase;
   font-weight: 900;
@@ -1567,4 +1564,130 @@ input:focus-visible {
   font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ team deathmatch */
+
+.team-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 190px;
+  padding: 6px 8px 6px 14px;
+  border-color: color-mix(in srgb, var(--team) 45%, transparent);
+}
+
+.team-card .team-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--team);
+  letter-spacing: -0.01em;
+}
+
+.team-card .k {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.team-card .team-score {
+  min-width: 52px;
+  padding: 2px 10px;
+  border-radius: 11px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 28px;
+  line-height: 1.1;
+  color: #101010;
+  background: var(--team);
+}
+
+.team-card.mine {
+  box-shadow: 0 0 26px color-mix(in srgb, var(--team) 45%, transparent);
+}
+
+.team-badge {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: 16px;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: #101010;
+  background: var(--team);
+}
+
+.scoreboard tr.team-row td {
+  padding-top: 16px;
+  text-align: left;
+  border-bottom: 2px solid var(--team);
+}
+
+.scoreboard tr.team-row .team-name {
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--team);
+  margin-right: 12px;
+}
+
+.scoreboard tr.team-row .team-total {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.team-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
+  border-radius: 16px;
+  background: rgba(19, 19, 18, 0.7);
+  border: 1px solid var(--line);
+}
+
+.team-current {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.team-current b {
+  color: var(--team);
+  font-size: 18px;
+}
+
+.team-switch .btn {
+  border-color: color-mix(in srgb, var(--team) 60%, transparent);
+  color: var(--team);
+}
+
+.team-switch .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.podium-score {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  justify-content: center;
+  margin-top: 6px;
+  font-weight: 800;
+  font-size: 18px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+}
+
+.podium-score b {
+  font-family: var(--mono);
+  font-size: 26px;
+  font-weight: 500;
+  color: var(--text);
 }

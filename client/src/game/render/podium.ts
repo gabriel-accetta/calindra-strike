@@ -1,4 +1,4 @@
-import { PLAYER_COLORS, type ResultRow, WEAPON } from '@calindra-strike/shared';
+import { type ResultRow, WEAPON } from '@calindra-strike/shared';
 import * as THREE from 'three';
 import { Avatar } from './avatar.ts';
 import { canvasTexture, drawBulldog, drawEitri } from './textures.ts';
@@ -155,7 +155,7 @@ export class PodiumScene {
     this.scene.add(this.confettiMesh);
   }
 
-  setResults(results: ResultRow[]): void {
+  setResults(results: ResultRow[], colorFor: (r: ResultRow) => string): void {
     for (const a of this.avatars) {
       this.stand.remove(a.root);
       a.dispose();
@@ -163,7 +163,7 @@ export class PodiumScene {
     this.avatars = [];
     results.slice(0, 3).forEach((r, i) => {
       const pl = PLACES[i];
-      const a = new Avatar(r.name, PLAYER_COLORS[r.color] ?? '#f0f0f0');
+      const a = new Avatar(r.name, colorFor(r));
       a.setWeapon(i === 0 ? WEAPON.SNIPER : WEAPON.RIFLE);
       a.root.position.set(pl.x, pl.h, 0);
       a.root.rotation.y = Math.PI;

@@ -203,6 +203,13 @@ export class Sfx {
     this.tone(this.master, t, 'square', f / 4, f / 5, 0.03, 0.04);
   }
 
+  /** Scope zoom click, like the CS 1.6 zoom sound. */
+  zoom(): void {
+    const t = this.ctx.currentTime;
+    this.noiseBurst(this.master, t, 3600, 4, 0.001, 0.025, 0.16);
+    this.tone(this.master, t, 'square', 900, 700, 0.03, 0.035);
+  }
+
   deploy(): void {
     this.noiseBurst(this.master, this.ctx.currentTime, 2200, 2, 0.002, 0.06, 0.1);
   }

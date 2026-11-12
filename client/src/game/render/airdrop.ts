@@ -99,7 +99,8 @@ export class AirdropView {
   }
 
   get label(): string {
-    return weaponDef(this.weapon).name;
+    const d = weaponDef(this.weapon);
+    return d.tag === d.name.toUpperCase() ? d.name : `${d.name} · ${d.tag}`;
   }
 
   target(y: number, landed: boolean): void {

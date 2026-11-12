@@ -74,6 +74,11 @@ export class ViewModel {
     this.flash.visible = false;
   }
 
+  /** Sleeves follow the player's identity colour (team colour in TDM). */
+  setSleeveColor(color: string): void {
+    this.sleeve.color.set(color).multiplyScalar(0.55);
+  }
+
   setLighting(sky: string, ground: string, sun: string, sunIntensity: number): void {
     this.hemi.color.set(sky);
     this.hemi.groundColor.set(ground);

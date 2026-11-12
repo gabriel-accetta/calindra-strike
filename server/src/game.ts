@@ -5,8 +5,8 @@ import {
   type Cmd,
   CollisionWorld,
   type GameEvent,
+  type GameMode,
   LAGCOMP_MAX_MS,
-  LEGENDARIES,
   MAX_ARMOR,
   MAX_HEALTH,
   type MapDef,
@@ -40,6 +40,7 @@ import {
   getMaps,
   giveWeapon,
   packState,
+  pickLegendary,
   rayHitbox,
   round,
   spawnState,
@@ -50,9 +51,22 @@ const HISTORY = 64; // ~1s of positions for lag compensation
 const MAX_QUEUE = 48;
 const CMD_BURST = 24;
 const MAX_CMDS_PER_TICK = 8;
-const AIRDROP_FIRST_MS = 25_000;
 const AIRDROP_EVERY_MS = 35_000;
 const AIRDROP_MAX_ACTIVE = 2;
+const TEAM_SWITCH_RESPAWN_TICKS = 90;
+
+export type ModeSetting = 'mixed' | GameMode;
+
+/** Match rotation. "mixed" visits every map with both modes, alternating maps each match. */
+function rotationFor(setting: ModeSetting, maps: number): { map: number; mode: GameMode }[] {
+  if (setting !== 'mixed') return Array.from({ length: maps }, (_, map) => ({ map, mode: setting }));
+  return [
+    { map: 0, mode: 'tdm' },
+    { map: 1, mode: 'ffa' },
+    { map: 0, mode: 'ffa' },
+    { map: 1, mode: 'tdm' },
+  ].map((r) => ({ ...r, map: r.map % maps })) as { map: number; mode: GameMode }[];
+}
 
 interface HistoryEntry {
   time: number;
@@ -67,6 +81,7 @@ export interface ServerPlayer {
   id: number;
   name: string;
   color: number;
+  team: number; // 0 Bulldogs, 1 Martelos, -1 free-for-all
   primaryChoice: WeaponId;
   state: PlayerState;
   alive: boolean;
@@ -103,6 +118,9 @@ export interface GameOptions {
   matchMs: number;
   podiumMs: number;
   warmupMinPlayers: number;
+  modes?: ModeSetting;
+  tdmLimit?: number; // team kills to win a TDM match early (0 = timer only)
+  airdropFirstMs?: number;
   random?: () => number;
 }
 
@@ -115,6 +133,12 @@ export class Game {
   world: CollisionWorld;
   phase: MatchPhase = 'warmup';
   phaseEnds = 0;
+  mode: GameMode = 'ffa';
+  readonly teamScores = [0, 0];
+  private winner = -1;
+  private endPending = false;
+  private rotationIndex = 0;
+  private readonly rotation: { map: number; mode: GameMode }[];
   private airdrops: Airdrop[] = [];
   private nextAirdropAt = 0;
   private airdropSeq = 1;
@@ -128,8 +152,67 @@ export class Game {
   constructor(private readonly opts: GameOptions) {
     this.random = opts.random ?? Math.random;
     this.worlds = getMaps().map((m) => new CollisionWorld(m));
+    this.rotation = rotationFor(opts.modes ?? 'mixed', this.worlds.length);
     this.map = getMap(0);
     this.world = this.worlds[0];
+    this.applyRotation();
+  }
+
+  get tdmLimit(): number {
+    return this.opts.tdmLimit ?? 50;
+  }
+
+  private applyRotation(): void {
+    const r = this.rotation[this.rotationIndex % this.rotation.length];
+    this.mapIndex = r.map;
+    this.map = getMap(r.map);
+    this.world = this.worlds[r.map];
+    this.mode = r.mode;
+  }
+
+  // ------------------------------------------------------------ teams
+
+  private teamSize(team: number, except?: ServerPlayer): number {
+    let n = 0;
+    for (const p of this.players.values()) if (p !== except && p.team === team) n++;
+    return n;
+  }
+
+  /** Smaller team, ties go to the team that is behind on score. */
+  private pickTeam(except?: ServerPlayer): number {
+    const a = this.teamSize(0, except);
+    const b = this.teamSize(1, except);
+    if (a !== b) return a < b ? 0 : 1;
+    if (this.teamScores[0] !== this.teamScores[1]) return this.teamScores[0] < this.teamScores[1] ? 0 : 1;
+    return this.random() < 0.5 ? 0 : 1;
+  }
+
+  /** Fresh, even split for a new TDM match (shuffled so teams change between matches). */
+  private balanceTeams(): void {
+    const list = [...this.players.values()];
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(this.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    list.forEach((p, i) => {
+      p.team = this.mode === 'tdm' ? i % 2 : -1;
+    });
+  }
+
+  switchTeam(p: ServerPlayer, team: number): void {
+    if (this.mode !== 'tdm' || this.phase === 'podium' || p.team === team || (team !== 0 && team !== 1)) return;
+    // only toward the smaller side, like CS's team balance
+    if (this.teamSize(team) >= this.teamSize(p.team)) return;
+    p.team = team;
+    p.streak = 0;
+    if (p.alive) {
+      p.alive = false;
+      p.queue.length = 0;
+      p.respawnAt = this.tick + TEAM_SWITCH_RESPAWN_TICKS;
+    }
+    this.emit({ k: 'team', id: p.id, team, auto: 0 });
+    this.broadcastRoster();
+    this.scoreDirty = true;
   }
 
   now(): number {
@@ -145,6 +228,7 @@ export class Game {
       id,
       name: this.uniqueName(name || `Jogador ${id}`),
       color: clamp(color, 0, PLAYER_COLORS.length - 1),
+      team: -1,
       primaryChoice: primary,
       state: createPlayerState(),
       alive: false,
@@ -165,6 +249,7 @@ export class Game {
       events: [],
       send,
     };
+    if (this.mode === 'tdm') p.team = this.pickTeam();
     this.players.set(id, p);
     p.send(
       JSON.stringify({
@@ -226,11 +311,17 @@ export class Game {
   // ------------------------------------------------------------ match flow
 
   private matchInfo(): MatchInfo {
+    const podium = this.phase === 'podium';
     return {
       phase: this.phase,
+      mode: this.mode,
       map: this.mapIndex,
       endsAt: this.phaseEnds,
-      results: this.phase === 'podium' ? this.results : undefined,
+      teams: [...this.teamScores],
+      limit: this.mode === 'tdm' ? this.tdmLimit : 0,
+      results: podium ? this.results : undefined,
+      winner: podium ? this.winner : undefined,
+      next: podium ? this.rotation[(this.rotationIndex + 1) % this.rotation.length] : undefined,
     };
   }
 
@@ -247,6 +338,8 @@ export class Game {
       p.streak = 0;
       p.bestStreak = 0;
     }
+    this.teamScores[0] = 0;
+    this.teamScores[1] = 0;
     this.scoreDirty = true;
   }
 
@@ -254,8 +347,11 @@ export class Game {
     this.phase = 'live';
     this.phaseEnds = this.now() + this.opts.matchMs;
     this.airdrops = [];
-    this.nextAirdropAt = this.now() + AIRDROP_FIRST_MS;
+    this.nextAirdropAt = this.now() + (this.opts.airdropFirstMs ?? 25_000);
+    this.endPending = false;
     this.resetScores();
+    this.balanceTeams();
+    this.broadcastRoster();
     for (const p of this.players.values()) this.spawn(p);
     this.broadcastMatch();
   }
@@ -263,6 +359,9 @@ export class Game {
   private endMatch(): void {
     this.phase = 'podium';
     this.phaseEnds = this.now() + this.opts.podiumMs;
+    this.endPending = false;
+    const [a, b] = this.teamScores;
+    this.winner = this.mode !== 'tdm' || a === b ? -1 : a > b ? 0 : 1;
     this.results = [...this.players.values()]
       .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || b.headshots - a.headshots || a.joinedAt - b.joinedAt)
       .map((p) => ({
@@ -273,6 +372,7 @@ export class Game {
         deaths: p.deaths,
         hs: p.headshots,
         best: p.bestStreak,
+        team: p.team,
       }));
     for (const p of this.players.values()) {
       p.alive = false;
@@ -283,15 +383,16 @@ export class Game {
   }
 
   private nextMap(): void {
-    this.mapIndex = (this.mapIndex + 1) % this.worlds.length;
-    this.map = getMap(this.mapIndex);
-    this.world = this.worlds[this.mapIndex];
+    this.rotationIndex++;
+    this.applyRotation();
     for (const p of this.players.values()) this.clearHistory(p);
     if (this.players.size >= this.opts.warmupMinPlayers) this.startMatch();
     else {
       this.phase = 'warmup';
       this.phaseEnds = 0;
       this.resetScores();
+      this.balanceTeams();
+      this.broadcastRoster();
       for (const p of this.players.values()) this.spawn(p);
       this.broadcastMatch();
     }
@@ -302,19 +403,37 @@ export class Game {
     this.phaseEnds = 0;
     this.airdrops = [];
     this.results = [];
+    this.teamScores[0] = 0;
+    this.teamScores[1] = 0;
+    this.endPending = false;
   }
 
   // ------------------------------------------------------------ spawning
 
   private spawn(p: ServerPlayer): void {
     const a = this.map.dropArea;
+    const tdm = this.mode === 'tdm';
+    if (tdm) {
+      // CS-style autobalance: on respawn, move from a side that is 2+ players bigger
+      if (p.team < 0 || this.teamSize(p.team) - this.teamSize(1 - p.team) >= 2) {
+        const before = p.team;
+        p.team = this.pickTeam(p);
+        if (before >= 0 && before !== p.team) {
+          this.emit({ k: 'team', id: p.id, team: p.team, auto: 1 });
+          this.broadcastRoster();
+        }
+      }
+    }
+    // TDM: each side skydives in over its own half of the map (Bulldogs north, Martelos south)
+    const minZ = tdm && p.team === 1 ? 150 : a.minZ;
+    const maxZ = tdm && p.team === 0 ? -150 : a.maxZ;
     let best = { x: 0, z: 0, score: -1 };
     for (let i = 0; i < 12; i++) {
       const x = a.minX + this.random() * (a.maxX - a.minX);
-      const z = a.minZ + this.random() * (a.maxZ - a.minZ);
+      const z = minZ + this.random() * (maxZ - minZ);
       let nearest = 1e9;
       for (const q of this.players.values()) {
-        if (q === p || !q.alive) continue;
+        if (q === p || !q.alive || (tdm && q.team === p.team)) continue;
         nearest = Math.min(nearest, Math.hypot(q.state.x - x, q.state.z - z));
       }
       if (nearest > best.score) best = { x, z, score: nearest };
@@ -385,6 +504,7 @@ export class Game {
     const targets: { q: ServerPlayer; x: number; y: number; z: number; ducked: boolean }[] = [];
     for (const q of this.players.values()) {
       if (q === p || !q.alive || q.state.dropping || q.state.protect > 0) continue;
+      if (this.mode === 'tdm' && q.team === p.team) continue; // no friendly fire: bullets pass through teammates
       const h = this.historyAt(q, t);
       if (h && !h.hittable) continue;
       targets.push(h ? { q, x: h.x, y: h.y, z: h.z, ducked: h.ducked } : { q, x: q.state.x, y: q.state.y, z: q.state.z, ducked: q.state.ducked });
@@ -446,6 +566,10 @@ export class Game {
     killer.streak++;
     killer.bestStreak = Math.max(killer.bestStreak, killer.streak);
     if (head) killer.headshots++;
+    if (this.mode === 'tdm' && killer !== victim && killer.team >= 0 && killer.team !== victim.team) {
+      this.teamScores[killer.team]++;
+      if (this.tdmLimit > 0 && this.teamScores[killer.team] >= this.tdmLimit) this.endPending = true;
+    }
     this.emit({ k: 'kill', by: killer.id, to: victim.id, w: weapon, hs: head ? 1 : 0, streak: killer.streak });
     this.scoreDirty = true;
   }
@@ -458,7 +582,7 @@ export class Game {
     const pt = pts[Math.floor(this.random() * pts.length)];
     const startY = this.map.dropHeight + 250;
     const landY = Math.max(0, this.world.groundBelow(pt.x, startY, pt.z, AIRDROP_HALF));
-    const w = LEGENDARIES[Math.floor(this.random() * LEGENDARIES.length)];
+    const w = pickLegendary(this.random());
     const d: Airdrop = { id: this.airdropSeq++, x: pt.x, z: pt.z, y: startY, landY, w, landed: false };
     this.airdrops.push(d);
     this.emit({ k: 'drop', id: d.id, x: d.x, z: d.z, w });
@@ -506,7 +630,7 @@ export class Game {
     const now = this.now();
 
     // phase transitions
-    if (this.phase === 'live' && now >= this.phaseEnds) this.endMatch();
+    if (this.phase === 'live' && (now >= this.phaseEnds || this.endPending)) this.endMatch();
     else if (this.phase === 'podium' && now >= this.phaseEnds) this.nextMap();
 
     // commands
@@ -598,12 +722,12 @@ export class Game {
     this.scoreDirty = false;
     this.lastScoreSent = this.now();
     const s = [...this.players.values()].map((p) => [p.id, p.kills, p.deaths, p.ping, p.streak, p.headshots]);
-    const msg = JSON.stringify({ t: 'score', s });
+    const msg = JSON.stringify({ t: 'score', s, ts: this.teamScores });
     for (const p of this.players.values()) p.send(msg);
   }
 
   private roster(): RosterEntry[] {
-    return [...this.players.values()].map((p) => [p.id, p.name, p.color]);
+    return [...this.players.values()].map((p) => [p.id, p.name, p.color, p.team]);
   }
 
   private broadcastRoster(): void {
@@ -620,6 +744,8 @@ export class Game {
       players: this.players.size,
       maxPlayers: this.opts.maxPlayers,
       map: this.map.name,
+      mode: this.mode,
+      teams: this.mode === 'tdm' ? this.teamScores : null,
       phase: this.phase,
       endsInMs: this.phase === 'warmup' ? null : Math.max(0, this.phaseEnds - this.now()),
       leaders,

@@ -26,7 +26,7 @@ import {
 } from './constants.ts';
 import { DEG, clamp, dirFromAngles, hashSeed, mulberry32, rayAabb, wrapAngle } from './math.ts';
 import type { CollisionWorld } from './physics.ts';
-import { WEAPON, WEAPON_COUNT, type WeaponDef, type WeaponId, recoilOffset, weaponDef } from './weapons.ts';
+import { WEAPON, WEAPON_COUNT, type WeaponDef, type WeaponId, csSniperSpread, recoilOffset, weaponDef } from './weapons.ts';
 
 export interface PlayerState {
   x: number;
@@ -58,6 +58,7 @@ export interface PlayerState {
   lastFire: number;
   zoom: number;
   protect: number;
+  resumeZoom: number; // AWP: zoom level restored once the bolt cycle ends (0 = none)
 }
 
 export interface Cmd {
@@ -112,6 +113,7 @@ export function createPlayerState(): PlayerState {
     lastFire: -1000,
     zoom: 0,
     protect: 0,
+    resumeZoom: 0,
   };
 }
 
@@ -160,6 +162,7 @@ export function spawnState(s: PlayerState, x: number, y: number, z: number, yaw:
   s.deploy = 0;
   s.recoil = 0;
   s.zoom = 0;
+  s.resumeZoom = 0;
   s.nextFire = s.tick;
   s.protect = 0;
 }
@@ -173,6 +176,7 @@ export function giveWeapon(s: PlayerState, id: WeaponId): void {
   s.deploy = weaponDef(id).deployTicks;
   s.reload = 0;
   s.zoom = 0;
+  s.resumeZoom = 0;
 }
 
 // ---------------------------------------------------------------- movement
@@ -421,6 +425,7 @@ export function playerMove(w: CollisionWorld, s: PlayerState, buttons: number, d
 // ---------------------------------------------------------------- weapons
 
 export function computeSpread(s: PlayerState, def: WeaponDef = weaponDef(s.weapon)): number {
+  if (def.csSniper) return csSniperSpread(s.onGround, Math.hypot(s.vx, s.vz), s.ducked, s.zoom > 0);
   const sp = def.spread;
   const base = s.zoom > 0 && sp.scoped !== undefined ? sp.scoped : sp.base;
   const maxs = maxSpeedFor(s);
@@ -436,6 +441,7 @@ function startReload(s: PlayerState, def: WeaponDef): void {
   if (s.mag[def.id] >= def.mag || s.reserve[def.id] <= 0) return;
   s.reload = def.reloadTicks;
   s.zoom = 0;
+  s.resumeZoom = 0;
 }
 
 function finishReload(s: PlayerState, def: WeaponDef): void {
@@ -469,6 +475,7 @@ function switchWeapon(s: PlayerState, req: number): void {
   s.deploy = weaponDef(target).deployTicks;
   s.reload = 0;
   s.zoom = 0;
+  s.resumeZoom = 0;
 }
 
 function fire(s: PlayerState, def: WeaponDef, seedBase: number, heavy: boolean): ShotInfo {
@@ -504,6 +511,11 @@ function fire(s: PlayerState, def: WeaponDef, seedBase: number, heavy: boolean):
   s.recoil += 1;
   s.lastFire = s.tick;
   s.protect = 0;
+  if (def.csSniper && s.zoom > 0) {
+    // CS: the scope drops while you work the bolt, then comes back on its own
+    s.resumeZoom = s.zoom;
+    s.zoom = 0;
+  }
   return { weapon: def.id, heavy, ox: s.x, oy: s.y + eye, oz: s.z, dirs, tick: s.tick };
 }
 
@@ -522,8 +534,13 @@ function weaponTick(s: PlayerState, buttons: number, seedBase: number): ShotInfo
     s.recoil = Math.max(0, s.recoil - def.recoil.recovery * TICK_DT);
   }
 
+  if (s.resumeZoom > 0 && s.tick >= s.nextFire && s.deploy === 0 && s.reload === 0) {
+    s.zoom = s.resumeZoom;
+    s.resumeZoom = 0;
+  }
   if (attack2 && !s.attack2Held && def.zoomFov.length > 0 && s.deploy === 0 && s.reload === 0) {
-    s.zoom = (s.zoom + 1) % (def.zoomFov.length + 1);
+    if (s.resumeZoom > 0) s.resumeZoom = 0; // right-click during the bolt cancels the re-scope
+    else s.zoom = (s.zoom + 1) % (def.zoomFov.length + 1);
   }
   if (buttons & BTN.RELOAD) startReload(s, def);
 

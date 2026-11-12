@@ -2,7 +2,7 @@
  * World units follow the GoldSrc convention (1 unit ~ 1 inch) so movement
  * numbers read like a CS 1.6 server config.
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export const TICK_RATE = 60;
 export const TICK_DT = 1 / TICK_RATE;
@@ -52,6 +52,14 @@ export const AIRDROP_PICKUP_RADIUS = 44;
 export const AIRDROP_HALF = 22;
 
 export const NAME_MAX_LEN = 16;
+
+/** Team Deathmatch sides. Lime vs blue stays distinguishable for red-green colour blindness. */
+export const TEAMS = [
+  { name: 'Bulldogs', color: '#9de82b' },
+  { name: 'Martelos', color: '#4a9dff' },
+] as const;
+
+export const ZOOM_SENSITIVITY_RATIO = 1.2; // CS 1.6 default
 export const CHAT_MAX_LEN = 100;
 
 /** Player colours: vivid, readable against the arena palette. Lime is reserved for UI. */

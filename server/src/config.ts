@@ -8,6 +8,9 @@ export interface Config {
   matchMs: number;
   podiumMs: number;
   warmupMinPlayers: number;
+  modes: 'mixed' | 'ffa' | 'tdm';
+  tdmLimit: number;
+  airdropFirstMs: number;
   trustProxy: boolean;
 }
 
@@ -17,6 +20,12 @@ function int(name: string, def: number, lo: number, hi: number): number {
   const v = Number(raw);
   if (!Number.isInteger(v) || v < lo || v > hi) throw new Error(`Invalid ${name}: ${raw}`);
   return v;
+}
+
+function modeSetting(raw: string | undefined): 'mixed' | 'ffa' | 'tdm' {
+  const v = (raw ?? 'mixed').trim().toLowerCase();
+  if (v === 'mixed' || v === 'ffa' || v === 'tdm') return v;
+  throw new Error(`Invalid GAME_MODE: ${raw} (use mixed, ffa or tdm)`);
 }
 
 export function loadConfig(): Config {
@@ -38,6 +47,9 @@ export function loadConfig(): Config {
     matchMs: int('MATCH_SECONDS', 300, 20, 3600) * 1000,
     podiumMs: int('PODIUM_SECONDS', 15, 3, 120) * 1000,
     warmupMinPlayers: int('WARMUP_MIN_PLAYERS', 2, 1, 64),
+    modes: modeSetting(process.env.GAME_MODE),
+    tdmLimit: int('TDM_SCORE_LIMIT', 50, 0, 1000),
+    airdropFirstMs: int('AIRDROP_FIRST_SECONDS', 25, 1, 600) * 1000,
     trustProxy: process.env.TRUST_PROXY === '1',
   };
 }

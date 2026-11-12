@@ -51,7 +51,9 @@ export interface WeaponDef {
   deployTicks: number;
   speed: number;
   scopedSpeed: number;
-  zoomFov: number[]; // vertical FOV per zoom level (degrees)
+  zoomFov: number[]; // CS-style FOV per zoom level: horizontal degrees at 4:3 (default view is 90)
+  /** CS 1.6 AWP behaviour: discrete accuracy table and automatic re-scope after each bolt cycle. */
+  csSniper?: boolean;
   spread: SpreadDef;
   recoil: RecoilDef;
   heavy?: { damage: number; ticks: number }; // melee alt attack
@@ -184,26 +186,27 @@ export const WEAPONS: readonly WeaponDef[] = [
   W({
     id: WEAPON.SNIPER,
     name: 'Mjölnir',
-    tag: 'MJÖLNIR',
+    tag: 'AWP',
     slot: 1,
     legendary: true,
-    damage: 120,
+    damage: 115,
     pellets: 1,
     headMult: 4,
     rangeMod: 0.99,
     range: 8192,
     armorPen: 0.97,
-    fireTicks: 88,
+    fireTicks: 87,
     auto: false,
-    mag: 5,
-    reserve: 15,
-    reloadTicks: 175,
+    mag: 10,
+    reserve: 20,
+    reloadTicks: 150,
     deployTicks: 70,
     speed: 210,
     scopedSpeed: 150,
-    zoomFov: [36, 14],
-    spread: { base: 0.08, move: 0.12, air: 0.3, duckMult: 1, perShot: 0, perShotMax: 0, scoped: 0.0008 },
-    recoil: { climb: 4, maxPitch: 4, sway: 0, swayPeriod: 1, swayStart: 99, recovery: 2 },
+    zoomFov: [40, 10],
+    csSniper: true,
+    spread: { base: 0.001, move: 0, air: 0, duckMult: 1, perShot: 0, perShotMax: 0 },
+    recoil: { climb: 2, maxPitch: 2, sway: 0, swayPeriod: 1, swayStart: 99, recovery: 2 },
   }),
   W({
     id: WEAPON.LMG,
@@ -233,6 +236,23 @@ export const WEAPONS: readonly WeaponDef[] = [
 
 export const PRIMARY_CHOICES: readonly WeaponId[] = [WEAPON.RIFLE, WEAPON.SMG, WEAPON.SHOTGUN];
 export const LEGENDARIES: readonly WeaponId[] = [WEAPON.SNIPER, WEAPON.LMG];
+
+/** Airdrop contents: the AWP-style Mjölnir is the headline item (about 2 in 3 crates). */
+export function pickLegendary(r: number): WeaponId {
+  return r < 0.65 ? WEAPON.SNIPER : WEAPON.LMG;
+}
+
+/** CS 1.6 AWP accuracy (cone units), straight from the 1.6 logic: stand still and scope. */
+export function csSniperSpread(onGround: boolean, speed: number, ducked: boolean, zoomed: boolean): number {
+  let spread: number;
+  if (!onGround) spread = 0.85;
+  else if (speed > 140) spread = 0.25;
+  else if (speed > 10) spread = 0.1;
+  else if (ducked) spread = 0;
+  else spread = 0.001;
+  if (!zoomed) spread += 0.08;
+  return spread;
+}
 
 export function weaponDef(id: number): WeaponDef {
   return WEAPONS[id] ?? WEAPONS[WEAPON.HAMMER];

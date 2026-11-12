@@ -11,7 +11,8 @@ export type ClientMsg =
   | { t: 'in'; c: Cmd[] }
   | { t: 'loadout'; primary: WeaponId }
   | { t: 'ping'; c: number }
-  | { t: 'chat'; text: string };
+  | { t: 'chat'; text: string }
+  | { t: 'team'; team: number };
 
 const isInt = (v: unknown, lo: number, hi: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
@@ -61,6 +62,8 @@ export function parseClientMessage(raw: string): ClientMsg | null {
       return isPrimary(o.primary) ? { t: 'loadout', primary: o.primary } : null;
     case 'chat':
       return isStr(o.text, 400) && o.text.length > 0 ? { t: 'chat', text: o.text } : null;
+    case 'team':
+      return isInt(o.team, 0, 1) ? { t: 'team', team: o.team } : null;
     default:
       return null;
   }
@@ -93,6 +96,7 @@ export function encodeCmd(c: Cmd): number[] {
 // ------------------------------------------------------------ server -> client
 
 export type MatchPhase = 'warmup' | 'live' | 'podium';
+export type GameMode = 'ffa' | 'tdm';
 
 export interface ResultRow {
   id: number;
@@ -102,13 +106,19 @@ export interface ResultRow {
   deaths: number;
   hs: number;
   best: number; // best streak
+  team: number; // -1 in free-for-all
 }
 
 export interface MatchInfo {
   phase: MatchPhase;
+  mode: GameMode;
   map: number;
   endsAt: number; // server time ms
+  teams: number[]; // team scores [bulldogs, martelos] (TDM)
+  limit: number; // TDM kill limit, 0 = timer only
   results?: ResultRow[];
+  winner?: number; // TDM: winning team, -1 draw
+  next?: { map: number; mode: GameMode }; // podium: upcoming match
 }
 
 export type GameEvent =
@@ -118,7 +128,8 @@ export type GameEvent =
   | { k: 'drop'; id: number; x: number; z: number; w: number }
   | { k: 'loot'; id: number; drop: number; w: number }
   | { k: 'join'; id: number }
-  | { k: 'leave'; id: number };
+  | { k: 'leave'; id: number }
+  | { k: 'team'; id: number; team: number; auto: number };
 
 export type ServerMsg =
   | { t: 'welcome'; id: number; time: number; roster: RosterEntry[]; match: MatchInfo; maxPlayers: number }
@@ -126,12 +137,12 @@ export type ServerMsg =
   | { t: 'snap'; time: number; ack: number; me: number[] | null; ps: number[][]; ad: number[][] }
   | { t: 'ev'; e: GameEvent[] }
   | { t: 'roster'; roster: RosterEntry[] }
-  | { t: 'score'; s: number[][] }
+  | { t: 'score'; s: number[][]; ts: number[] }
   | { t: 'match'; match: MatchInfo }
   | { t: 'pong'; c: number; s: number }
   | { t: 'chat'; id: number; text: string };
 
-export type RosterEntry = [id: number, name: string, color: number];
+export type RosterEntry = [id: number, name: string, color: number, team: number];
 
 export const round = (v: number, k: number): number => Math.round(v * k) / k;
 
@@ -172,12 +183,13 @@ export function packState(s: PlayerState): number[] {
     s.lastFire,
     s.zoom,
     s.protect,
+    s.resumeZoom,
     ...s.mag,
     ...s.reserve,
   ];
 }
 
-export const PACKED_STATE_LEN = 20 + WEAPON_COUNT * 2;
+export const PACKED_STATE_LEN = 21 + WEAPON_COUNT * 2;
 
 export function unpackState(a: number[], s: PlayerState): void {
   s.x = a[0];
@@ -206,9 +218,10 @@ export function unpackState(a: number[], s: PlayerState): void {
   s.lastFire = a[17];
   s.zoom = a[18];
   s.protect = a[19];
+  s.resumeZoom = a[20];
   for (let i = 0; i < WEAPON_COUNT; i++) {
-    s.mag[i] = a[20 + i];
-    s.reserve[i] = a[20 + WEAPON_COUNT + i];
+    s.mag[i] = a[21 + i];
+    s.reserve[i] = a[21 + WEAPON_COUNT + i];
   }
 }
 

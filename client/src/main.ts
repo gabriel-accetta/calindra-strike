@@ -72,10 +72,15 @@ function start(net: Connection, s: Settings, welcome: Welcome): void {
     resume: () => void game?.requestPlay(),
     leave,
     settingsChanged: (ns) => game?.applySettings(ns),
+    switchTeam: () => {
+      game?.switchTeam();
+      void game?.requestPlay();
+    },
   });
+  if (import.meta.env.DEV) (window as unknown as { __overlays: Overlays }).__overlays = overlays;
   game = new ClientGame(root, net, s, welcome, {
     showClickToPlay: (v) => overlays.showClick(v),
-    showMenu: (v) => overlays.showMenu(v),
+    showMenu: (v) => overlays.showMenu(v, game?.teamState() ?? null),
     showPodium: (r, next) => overlays.showPodium(r, next),
     updatePodiumCountdown: (sec) => overlays.podiumCountdown(sec),
     disconnected: (reason) => overlays.disconnected(reason, leave),

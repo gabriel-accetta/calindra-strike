@@ -10,6 +10,8 @@ import {
   type MapDef,
   type MatchInfo,
   PLAYER_COLORS,
+  TEAMS,
+  ZOOM_SENSITIVITY_RATIO,
   PROTOCOL_VERSION,
   type PlayerState,
   RESPAWN_TICKS,
@@ -86,10 +88,24 @@ export interface Welcome {
   maxPlayers: number;
 }
 
+export interface PodiumData {
+  mode: 'ffa' | 'tdm';
+  featured: ResultRow[]; // who stands on the podium (TDM: best of the winning team)
+  winner: number; // TDM winning team, -1 draw / FFA
+  teams: number[];
+  myTeam: number;
+  colorFor: (r: ResultRow) => string;
+}
+
+export interface TeamState {
+  team: number;
+  canSwitch: boolean;
+}
+
 export interface UiHooks {
   showClickToPlay(show: boolean): void;
   showMenu(show: boolean): void;
-  showPodium(results: ResultRow[] | null, nextMap: string): void;
+  showPodium(data: PodiumData | null, next: string): void;
   updatePodiumCountdown(seconds: number): void;
   disconnected(reason: string): void;
 }
@@ -124,7 +140,8 @@ export class ClientGame {
   private sunDir = new THREE.Vector3();
 
   readonly myId: number;
-  private readonly names = new Map<number, { name: string; color: string }>();
+  private readonly names = new Map<number, { name: string; personal: string; team: number }>();
+  private teamScores = [0, 0];
   private readonly online = new Set<number>();
   private readonly scores = new Map<number, { kills: number; deaths: number; ping: number; streak: number; hs: number }>();
   match: MatchInfo;
@@ -228,7 +245,7 @@ export class ClientGame {
     this.hud.chatInput.addEventListener('keydown', this.onChatKey);
     this.onResize();
     this.ui.showClickToPlay(true);
-    if (this.match.phase === 'podium') this.enterPodium(this.match.results ?? []);
+    if (this.match.phase === 'podium') this.enterPodium(this.match);
     this.lastFrame = performance.now();
     this.raf = requestAnimationFrame(this.frame);
   }
@@ -281,21 +298,56 @@ export class ClientGame {
 
   private setRoster(roster: RosterEntry[]): void {
     this.online.clear();
-    for (const [id, name, color] of roster) {
-      this.names.set(id, { name, color: PLAYER_COLORS[color] ?? '#f0f0f0' });
+    for (const [id, name, color, team] of roster) {
+      const prev = this.names.get(id);
+      this.names.set(id, { name, personal: PLAYER_COLORS[color] ?? '#f0f0f0', team });
       this.online.add(id);
+      if (prev && prev.team !== team) this.dropAvatar(id); // rebuilt next snapshot in the new team colour
     }
-    for (const [id, r] of this.remotes) {
-      if (!this.online.has(id)) {
-        this.scene.remove(r.avatar.root);
-        r.avatar.dispose();
-        this.remotes.delete(id);
-      }
-    }
+    for (const id of [...this.remotes.keys()]) if (!this.online.has(id)) this.dropAvatar(id);
+    this.view.setSleeveColor(this.nameOf(this.myId).color);
   }
 
-  private nameOf(id: number): { name: string; color: string } {
-    return this.names.get(id) ?? { name: `#${id}`, color: '#9b9b94' };
+  private dropAvatar(id: number): void {
+    const r = this.remotes.get(id);
+    if (!r) return;
+    this.scene.remove(r.avatar.root);
+    r.avatar.dispose();
+    this.remotes.delete(id);
+  }
+
+  /** Display identity: team colour in TDM, personal colour in free-for-all. */
+  private nameOf(id: number): { name: string; color: string; team: number } {
+    const n = this.names.get(id);
+    if (!n) return { name: `#${id}`, color: '#9b9b94', team: -1 };
+    const color = this.match.mode === 'tdm' && n.team >= 0 ? TEAMS[n.team].color : n.personal;
+    return { name: n.name, color, team: n.team };
+  }
+
+  get myTeam(): number {
+    return this.names.get(this.myId)?.team ?? -1;
+  }
+
+  private isTeammate(id: number): boolean {
+    const t = this.myTeam;
+    return this.match.mode === 'tdm' && t >= 0 && this.names.get(id)?.team === t;
+  }
+
+  teamState(): TeamState | null {
+    if (this.match.mode !== 'tdm' || this.myTeam < 0) return null;
+    let mine = 0;
+    let other = 0;
+    for (const id of this.online) {
+      const t = this.names.get(id)?.team;
+      if (t === this.myTeam) mine++;
+      else if (t === 1 - this.myTeam) other++;
+    }
+    return { team: this.myTeam, canSwitch: this.match.phase !== 'podium' && other < mine };
+  }
+
+  switchTeam(): void {
+    const st = this.teamState();
+    if (st?.canSwitch) this.net.send({ t: 'team', team: 1 - st.team });
   }
 
   private loadMap(index: number): void {
@@ -337,6 +389,7 @@ export class ClientGame {
       case 'score':
         this.scores.clear();
         for (const [id, kills, deaths, ping, streak, hs] of m.s) this.scores.set(id, { kills, deaths, ping, streak, hs });
+        if (Array.isArray(m.ts)) this.teamScores = m.ts;
         break;
       case 'match':
         this.onMatch(m.match);
@@ -498,14 +551,15 @@ export class ClientGame {
       }
       case 'drop': {
         this.sfx.airdrop();
-        this.hud.announce('suprimento a caminho', `${weaponDef(e.w).name} · siga o feixe verde`);
+        const d = weaponDef(e.w);
+        this.hud.announce('suprimento a caminho', `${d.name} (${d.tag}) · siga o feixe verde`);
         break;
       }
       case 'loot': {
         const def = weaponDef(e.w);
         if (e.id === this.myId) {
           this.sfx.loot();
-          this.hud.announce(`${def.name.toLowerCase()} na mão`, 'arma lendária + armadura completa');
+          this.hud.announce(`${def.name.toLowerCase()} na mão`, def.zoomFov.length ? 'botão direito: mira 40° → 10° · fique parado pra acertar' : 'arma lendária + armadura completa');
           this.view.setWeapon(e.w as WeaponId);
         } else {
           this.hud.info(`${this.nameOf(e.id).name} pegou ${def.name}`);
@@ -518,29 +572,55 @@ export class ClientGame {
       case 'leave':
         this.hud.info(`${this.nameOf(e.id).name} saiu`);
         break;
+      case 'team': {
+        const t = TEAMS[e.team];
+        if (!t) break;
+        if (e.id === this.myId) this.hud.announce(`agora você é ${t.name.toLowerCase()}`, e.auto ? 'balanceamento automático de times' : 'troca de time', true);
+        else this.hud.info(`${this.nameOf(e.id).name} foi para os ${t.name}${e.auto ? ' (balanceamento)' : ''}`);
+        break;
+      }
     }
   }
 
   private onMatch(info: MatchInfo): void {
-    const before = this.match.phase;
+    const before = this.match;
     this.match = info;
+    if (Array.isArray(info.teams)) this.teamScores = info.teams;
+    if (info.mode !== before.mode) {
+      this.dropAllAvatars();
+      this.view.setSleeveColor(this.nameOf(this.myId).color);
+    }
     if (info.map !== this.mapIndex) this.loadMap(info.map);
     if (info.phase === 'podium') {
-      this.enterPodium(info.results ?? []);
+      this.enterPodium(info);
     } else {
       if (this.podiumActive) this.exitPodium();
-      if (info.phase === 'live') this.hud.announce('valendo!', `${this.map.name} · ${Math.round((info.endsAt - this.serverNow()) / 60000)} min · mais kills vence`);
-      else if (before !== 'warmup') this.hud.announce('aquecimento', 'esperando mais jogadores', true);
+      const min = Math.round((info.endsAt - this.serverNow()) / 60000);
+      if (info.phase === 'live' && info.mode === 'tdm') {
+        const t = TEAMS[this.myTeam];
+        this.hud.announce('team deathmatch', `${t ? `você é dos ${t.name}` : this.map.name} · ${info.limit ? `${info.limit} kills ou ` : ''}${min} min`);
+      } else if (info.phase === 'live') this.hud.announce('todos contra todos', `${this.map.name} · ${min} min · mais kills vence`);
+      else if (before.phase !== 'warmup') this.hud.announce('aquecimento', 'esperando mais jogadores', true);
     }
   }
 
-  private enterPodium(results: ResultRow[]): void {
+  private dropAllAvatars(): void {
+    for (const id of [...this.remotes.keys()]) this.dropAvatar(id);
+  }
+
+  private enterPodium(info: MatchInfo): void {
+    const results = info.results ?? [];
+    const tdm = info.mode === 'tdm';
+    const winner = tdm ? (info.winner ?? -1) : -1;
+    const featured = winner >= 0 ? results.filter((r) => r.team === winner) : results;
+    const colorFor = (r: ResultRow) => (tdm && r.team >= 0 ? TEAMS[r.team].color : (PLAYER_COLORS[r.color] ?? '#f0f0f0'));
     this.podiumActive = true;
-    this.podium.setResults(results);
+    this.podium.setResults(featured.slice(0, 3), colorFor);
     this.hud.setVisible(false);
     this.sfx.fanfare();
     this.sfx.setWind(0);
-    this.ui.showPodium(results, getMap(this.mapIndex + 1).name);
+    const next = info.next ? `${getMap(info.next.map).name} · ${info.next.mode === 'tdm' ? 'team deathmatch' : 'todos contra todos'}` : '';
+    this.ui.showPodium({ mode: info.mode, featured, winner, teams: info.teams ?? [0, 0], myTeam: this.myTeam, colorFor }, next);
   }
 
   private exitPodium(): void {
@@ -607,7 +687,7 @@ export class ClientGame {
     const cmd: Cmd = { seq: ++this.seq, buttons, yaw: this.input.yaw, pitch: this.input.pitch, weapon: req, interp: Math.round(renderTime) };
     if (canPlay) {
       const s = this.me;
-      const before = { ground: s.onGround, drop: s.dropping, reload: s.reload, weapon: s.weapon, nextFire: s.nextFire, vy: s.vy };
+      const before = { ground: s.onGround, drop: s.dropping, reload: s.reload, weapon: s.weapon, nextFire: s.nextFire, vy: s.vy, zoom: s.zoom };
       this.prev.set(s.x, s.y, s.z);
       const shot = applyCmd(this.collision, s, cmd, this.myId);
       this.pending.push(cmd);
@@ -626,8 +706,9 @@ export class ClientGame {
     }
   }
 
-  private localSounds(before: { ground: boolean; drop: boolean; reload: number; weapon: WeaponId; nextFire: number; vy: number }, cmd: Cmd, shot: ShotInfo | null): void {
+  private localSounds(before: { ground: boolean; drop: boolean; reload: number; weapon: WeaponId; nextFire: number; vy: number; zoom: number }, cmd: Cmd, shot: ShotInfo | null): void {
     const s = this.me;
+    if (before.zoom !== s.zoom && s.zoom > 0) this.sfx.zoom();
     if (before.ground && !s.onGround && s.vy > 0) this.sfx.jump();
     if (!before.ground && s.onGround && !before.drop) this.sfx.land(before.vy < -480);
     if (before.drop && !s.dropping) {
@@ -681,7 +762,7 @@ export class ClientGame {
       let dist = wall ? wall.t : def.range;
       let hitPlayer = false;
       for (const r of this.remotes.values()) {
-        if (!r.visible) continue;
+        if (!r.visible || this.isTeammate(r.id)) continue; // no friendly fire: rounds pass through
         const s = this.sample(r, renderT);
         if (!s || !(s.flags & RF_ALIVE) || s.flags & (RF_DROP | RF_PROTECT)) continue;
         const h = rayHitbox(shot.ox, shot.oy, shot.oz, dx, dy, dz, s.x, s.y, s.z, (s.flags & RF_DUCK) !== 0, dist);
@@ -822,15 +903,17 @@ export class ClientGame {
     this.punch = Math.max(0, this.punch - dt * 8);
 
     // field of view: CS-style horizontal FOV defined at 4:3, Hor+ for wider screens
-    const baseV = 2 * Math.atan(Math.tan((this.settings.fov * DEG) / 2) * 0.75) / DEG;
+    const csToVertical = (h: number) => (2 * Math.atan(Math.tan((h * DEG) / 2) * 0.75)) / DEG;
+    const baseV = csToVertical(this.settings.fov);
     let vfov = baseV;
-    if (this.alive && s.zoom > 0 && def.zoomFov.length) vfov = def.zoomFov[s.zoom - 1];
+    const zoomed = this.alive && s.zoom > 0 && def.zoomFov.length > 0;
+    if (zoomed) vfov = csToVertical(def.zoomFov[s.zoom - 1]);
     if (this.alive && s.dropping) vfov = baseV + 8;
     if (Math.abs(this.camera.fov - vfov) > 0.01) {
       this.camera.fov = vfov;
       this.camera.updateProjectionMatrix();
     }
-    this.input.zoomSensScale = vfov / baseV;
+    this.input.zoomSensScale = zoomed ? (def.zoomFov[s.zoom - 1] / this.settings.fov) * ZOOM_SENSITIVITY_RATIO : 1;
 
     if (this.alive) {
       const alpha = clamp(this.accum / TICK_MS, 0, 1);
@@ -903,7 +986,7 @@ export class ClientGame {
       const to = v3.set(s.x - this.camera.position.x, s.y + 60 - this.camera.position.y, s.z - this.camera.position.z);
       const dist = to.length();
       const aim = to.divideScalar(dist || 1).dot(camFwd);
-      r.avatar.showTag(dist < 380 || aim > 0.9985 || dropping);
+      r.avatar.showTag(this.isTeammate(r.id) || dist < 380 || aim > 0.9985 || dropping);
     }
   }
 
@@ -917,7 +1000,7 @@ export class ClientGame {
     if (this.match.phase === 'live') {
       const left = Math.max(0, this.match.endsAt - now);
       const sec = Math.ceil(left / 1000);
-      hud.setTimer(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, this.map.name, sec <= 30);
+      hud.setTimer(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, `${this.map.name} · ${this.match.mode === 'tdm' ? 'tdm' : 'ffa'}`, sec <= 30);
       if (sec <= 10 && sec > 0 && sec !== this.lastBeep) {
         this.lastBeep = sec;
         this.sfx.beep(sec <= 3);
@@ -928,8 +1011,12 @@ export class ClientGame {
     const leaders: LeaderRow[] = rows.slice(0, 3).map((r, i) => ({ name: r.name, color: r.color, kills: r.kills, rank: i + 1, me: r.me }));
     const myIdx = rows.findIndex((r) => r.me);
     const meRow = myIdx >= 0 ? { name: rows[myIdx].name, color: rows[myIdx].color, kills: rows[myIdx].kills, rank: myIdx + 1, me: true } : null;
-    hud.setLeaders(leaders, meRow);
-    hud.showScoreboard(this.scoreboardOpen, rows, `${this.map.name} · ${rows.length} jogador${rows.length === 1 ? '' : 'es'}`);
+    const tdm = this.match.mode === 'tdm';
+    if (tdm) hud.setTeams(this.teamScores, this.match.limit, this.myTeam);
+    else hud.setLeaders(leaders, meRow);
+    hud.setTeamBadge(tdm ? this.myTeam : -1);
+    const title = `${this.map.name} · ${tdm ? 'team deathmatch' : 'todos contra todos'} · ${rows.length} jogador${rows.length === 1 ? '' : 'es'}`;
+    hud.showScoreboard(this.scoreboardOpen, rows, title, tdm ? this.teamScores : null);
 
     if (!this.alive) {
       const left = Math.max(0, RESPAWN_TICKS * TICK_MS - (performance.now() - this.deathAt));
@@ -1008,7 +1095,7 @@ export class ClientGame {
     for (const id of this.online) {
       const n = this.nameOf(id);
       const sc = this.scores.get(id) ?? { kills: 0, deaths: 0, ping: 0, streak: 0, hs: 0 };
-      rows.push({ id, name: n.name, color: n.color, kills: sc.kills, deaths: sc.deaths, hs: sc.hs, ping: sc.ping, me: id === this.myId });
+      rows.push({ id, name: n.name, color: n.color, team: n.team, kills: sc.kills, deaths: sc.deaths, hs: sc.hs, ping: sc.ping, me: id === this.myId });
     }
     rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || a.id - b.id);
     return rows;

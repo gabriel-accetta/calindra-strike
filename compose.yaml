@@ -17,6 +17,8 @@ services:
       MATCH_SECONDS: ${MATCH_SECONDS:-300}
       PODIUM_SECONDS: ${PODIUM_SECONDS:-15}
       WARMUP_MIN_PLAYERS: ${WARMUP_MIN_PLAYERS:-2}
+      GAME_MODE: ${GAME_MODE:-mixed}
+      TDM_SCORE_LIMIT: ${TDM_SCORE_LIMIT:-50}
       JOIN_CODE: ${JOIN_CODE:-}
     read_only: true
     cap_drop: [ALL]
