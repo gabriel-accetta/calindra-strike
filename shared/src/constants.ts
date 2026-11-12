@@ -2,7 +2,7 @@
  * World units follow the GoldSrc convention (1 unit ~ 1 inch) so movement
  * numbers read like a CS 1.6 server config.
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 export const TICK_RATE = 60;
 export const TICK_DT = 1 / TICK_RATE;
@@ -89,6 +89,5 @@ export const BTN = {
   ATTACK: 128,
   ATTACK2: 256,
   RELOAD: 512,
-  USE: 1024, // E: plant / defuse
 } as const;
-export const BTN_MASK = 2047;
+export const BTN_MASK = 1023;

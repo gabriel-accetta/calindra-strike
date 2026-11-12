@@ -17,6 +17,19 @@ export class Overlays {
   private readonly menu: HTMLElement;
   private readonly podium: HTMLElement;
   private readonly podiumCards = h('div', { class: 'podium-cards' });
+  private readonly finalRows = h('tbody');
+  private readonly finalCount = h('span', { class: 'label' });
+  private readonly finalScroll = h('div', { class: 'final-scroll', tabindex: 0, 'aria-label': 'Resultados de todos os jogadores' }, [
+    h('table', {}, [
+      h('caption', { class: 'sr-only', text: 'Placar completo da partida' }),
+      h('thead', {}, [h('tr', {}, ['#', 'jogador', 'kills', 'mortes', 'hs'].map((text) => h('th', { scope: 'col', text })))]),
+      this.finalRows,
+    ]),
+  ]);
+  private readonly finalScoreboard = h('section', { class: 'final-scoreboard glass', 'aria-label': 'Placar final' }, [
+    h('header', {}, [h('h3', { text: 'placar completo' }), this.finalCount]),
+    this.finalScroll,
+  ]);
   private readonly podiumNext = h('div', { class: 'podium-next' });
   private readonly voteBox = h('div', { class: 'vote glass hidden' });
   private vote: VoteInfo | null = null;
@@ -48,6 +61,7 @@ export class Overlays {
       h('div', { class: 'head' }, [gameLogo('game-logo podium-logo'), this.podiumLabel, this.podiumTitle, this.podiumScore]),
       h('div', {}, [this.podiumCards, this.podiumNext]),
       this.voteBox,
+      this.finalScoreboard,
     ]);
     root.append(this.podium, this.click, this.menu);
   }
@@ -204,6 +218,22 @@ export class Overlays {
         ]);
       }),
     );
+    this.finalCount.textContent = `${data.results.length} jogadores`;
+    this.finalRows.replaceChildren(
+      ...data.results.map((r, i) =>
+        h('tr', { class: r.id === data.myId ? 'is-me' : '' }, [
+          h('td', { class: 'final-rank', text: String(i + 1) }),
+          h('td', { class: 'final-player' }, [
+            h('b', { style: `color:${data.colorFor(r)}`, text: r.name }),
+            h('small', { text: [tdm && r.team >= 0 ? TEAMS[r.team].name : '', r.bot ? 'bot' : '', r.id === data.myId ? 'você' : ''].filter(Boolean).join(' · ') }),
+          ]),
+          h('td', { class: 'final-kills', text: String(r.kills) }),
+          h('td', { text: String(r.deaths) }),
+          h('td', { text: String(r.hs) }),
+        ]),
+      ),
+    );
+    this.finalScroll.scrollTop = 0;
   }
 
   podiumCountdown(seconds: number): void {

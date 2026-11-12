@@ -1796,35 +1796,139 @@ input:focus-visible {
   }
 }
 
-/* defuse objective */
-.objective {
+/* Full match ranking stays beside the 3D podium; long lobbies scroll independently. */
+.final-scoreboard {
   position: absolute;
-  left: 50%;
-  bottom: 148px;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: min(640px, 90vw);
-  padding: 10px 18px;
-  border-radius: 10px;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  pointer-events: none;
+  left: 24px;
+  top: 270px;
+  bottom: 155px;
+  width: min(360px, 32vw);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--glass-strong);
+  pointer-events: auto;
 }
 
-.objective-bar {
-  height: 6px;
-  margin-top: 8px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
+.final-scoreboard header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.objective-bar i {
+.final-scoreboard h3 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: -0.03em;
+}
+
+.final-scoreboard header .label {
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.final-scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--lime) transparent;
+}
+
+.final-scroll:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 3px;
+}
+
+.final-scoreboard table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.final-scoreboard th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #1c1d19;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 400;
+  text-transform: uppercase;
+  padding: 8px 5px;
+  text-align: right;
+}
+
+.final-scoreboard td {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 5px;
+  text-align: right;
+}
+
+.final-scoreboard th:nth-child(2),
+.final-scoreboard td.final-player {
+  text-align: left;
+}
+
+.final-player b,
+.final-player small {
   display: block;
-  height: 100%;
-  background: var(--lime);
-  transform-origin: left;
-  transform: scaleX(0);
+  max-width: 125px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.final-player b {
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+.final-player small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.final-rank {
+  color: var(--dim);
+}
+
+.final-kills {
+  color: var(--lime);
+  font-weight: 700;
+}
+
+.final-scoreboard tr.is-me {
+  background: var(--lime-soft);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-height: 650px) {
+  .final-scoreboard {
+    top: 155px;
+    bottom: 140px;
+    padding: 10px;
+  }
+  .podium-ui {
+    padding-top: 12px;
+  }
+  .podium-ui h2 {
+    font-size: 34px;
+  }
+  .podium-ui .podium-logo {
+    display: none;
+  }
 }

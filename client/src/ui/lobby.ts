@@ -215,10 +215,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
     }
     const enabledModes: GameMode[] = status.modes?.length ? status.modes : ['tdm', 'ffa'];
     modeChipText.textContent = enabledModes.map((mode) => MODE_LABEL[mode]).join(' · ');
-    footnote.textContent =
-      status.mode === 'defuse'
-        ? 'Rodadas sem respawn · plante ou desarme a C4 com E'
-        : 'Partidas de 5 min · quem fizer mais kills sobe no pódio';
+    footnote.textContent = 'Partidas de 5 min · quem fizer mais kills sobe no pódio';
     const label = MODE_LABEL[status.mode ?? 'ffa'] ?? 'todos contra todos';
     const mode = status.mode !== 'ffa' && status.teams ? `${label} ${status.teams[0]}×${status.teams[1]}` : label;
     const phase =

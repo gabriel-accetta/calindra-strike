@@ -62,6 +62,19 @@ describe('movement', () => {
     expect(s.onGround).toBe(true);
   });
 
+  it('runs faster with the hammer out than with a pistol or rifle', () => {
+    const w = testMap(() => {});
+    const s = grounded(w);
+    run(w, s, 150, BTN.FWD, 0, 3);
+    expect(s.weapon).toBe(WEAPON.HAMMER);
+    const speed = Math.hypot(s.vx, s.vz);
+    expect(speed).toBeGreaterThan(weaponDef(WEAPON.PISTOL).speed + 20);
+    expect(speed).toBeLessThanOrEqual(weaponDef(WEAPON.HAMMER).speed + 0.01);
+    run(w, s, 150, BTN.FWD, 0, 2);
+    expect(s.weapon).toBe(WEAPON.PISTOL);
+    expect(Math.hypot(s.vx, s.vz)).toBeLessThanOrEqual(weaponDef(WEAPON.PISTOL).speed + 0.01);
+  });
+
   it('stops at walls without penetrating them', () => {
     const w = testMap((b) => b.add(-200, 0, -300, 200, 200, -280, 'concrete'));
     const s = grounded(w);

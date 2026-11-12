@@ -71,6 +71,7 @@ export class Avatar {
   private readonly legR = new THREE.Group();
   private readonly head = new THREE.Group();
   private readonly mount = new THREE.Group();
+  private readonly supportArm = new THREE.Group();
   private readonly canopy = new THREE.Group();
   private readonly tag: THREE.Sprite;
   private weapon: WeaponModel | null = null;
@@ -125,9 +126,10 @@ export class Avatar {
     this.mount.position.set(0, 22, 0);
     part(this.mount, 6, 6, 15, body, 9, -3, -6);
     part(this.mount, 5, 5, 5, dark, 7, -5, -14);
-    const armL = part(this.mount, 6, 6, 19, body, -7, -3, -10);
+    this.mount.add(this.supportArm);
+    const armL = part(this.supportArm, 6, 6, 19, body, -7, -3, -10);
     armL.rotation.y = 0.45;
-    part(this.mount, 5, 5, 5, dark, 0, -3, -19);
+    part(this.supportArm, 5, 5, 5, dark, 0, -3, -19);
     this.upper.add(this.mount);
 
     // skydive canopy
@@ -173,9 +175,11 @@ export class Avatar {
     this.weapon = buildWeapon(id);
     this.weaponId = id;
     const g = this.weapon.group;
+    this.supportArm.rotation.x = id === WEAPON.HAMMER ? -0.9 : 0;
+    this.supportArm.position.x = id === WEAPON.HAMMER ? -4 : 0;
     if (id === WEAPON.HAMMER) {
-      g.position.set(8, -4, -16);
-      g.rotation.set(0.9, 0, 0);
+      g.position.set(7, -5, -14);
+      g.rotation.set(0.15, -0.2, 0.2);
     } else {
       g.position.set(5, -2, -14);
     }

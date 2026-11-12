@@ -60,11 +60,6 @@ export interface MapDef {
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   dropArea: { minX: number; maxX: number; minZ: number; maxZ: number };
   dropHeight: number;
-  /** Bomb defusal: fixed ground spawns per team (0 attackers, 1 defenders) and the two bombsites. */
-  defuse?: {
-    spawns: { x: number; y: number; z: number; yaw: number }[][];
-    sites: { id: string; min: Vec3; max: Vec3 }[];
-  };
   airdropPoints: { x: number; z: number }[];
   boxes: Box[];
   lights: MapLight[];

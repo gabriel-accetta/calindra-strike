@@ -1,20 +1,5 @@
 import { MapBuilder } from './builder.ts';
-import type { DefuseSpec } from './defuse.ts';
 import type { MapDef } from './types.ts';
-
-/**
- * Bomb defusal on Forja: attackers start on the north edge, defenders on the south
- * edge, both sites sit in the southern half so defenders arrive first (like CS).
- * A: the crates and low wall east of the anvil; B: the yard by the container to the west.
- */
-export const DEFUSE_FORJA: DefuseSpec = {
-  attackers: { x: 0, z: -1380, yaw: Math.PI },
-  defenders: { x: 0, z: 1380, yaw: 0 },
-  sites: [
-    { id: 'A', rect: [780, 140, 1240, 480] },
-    { id: 'B', rect: [-1240, 140, -780, 480] },
-  ],
-};
 
 /**
  * FORJA: an open-air forge yard. Square, 4-way rotationally symmetric so every
@@ -127,7 +112,7 @@ export function buildForja(): MapDef {
     b.point(400, -960);
   });
 
-  // bombsite cover (defuse mode; plain extra cover in the other modes)
+  // Extra cover for close-range fights.
   b.crate(880, 240, 56);
   b.crate(1140, 220, 48);
   b.add(1060, 0, 440, 1180, 40, 456, 'concrete');

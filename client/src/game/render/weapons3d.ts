@@ -102,13 +102,21 @@ export function buildWeapon(id: WeaponId): WeaponModel {
       muzzle.position.set(0, 2, -34);
       break;
     case WEAPON.HAMMER:
-      bx(g, 1.6, 1.6, 20, mats.wood, 0, 0, -6);
-      bx(g, 1.9, 1.9, 6, mats.poly, 0, 0, 2);
-      bx(g, 5, 11, 6, mats.steel, 0, 1.5, -17);
-      bx(g, 5.2, 1, 6.2, mats.lime, 0, 4.5, -17);
-      bx(g, 5.2, 1, 6.2, mats.lime, 0, -1.5, -17);
-      bx(g, 4, 2.6, 4.6, mats.gun, 0, 7.6, -17);
-      muzzle.position.set(0, 1.5, -17);
+      // Upright shaft: grip at the origin, shared by first- and third-person hands.
+      bx(g, 1.8, 19, 1.8, mats.wood, 0, 2.5, 0);
+      bx(g, 2.2, 10, 2.2, mats.poly, 0, -1.6, 0);
+      for (const y of [-5.5, -3.5, -1.5, 0.5, 2.5]) bx(g, 2.35, 0.45, 2.35, mats.gun2, 0, y, 0);
+      bx(g, 3, 1.8, 3, mats.steel, 0, -7, 0);
+      bx(g, 3.6, 2, 3.6, mats.gun2, 0, 11.5, 0);
+      bx(g, 12, 7, 7, mats.steel, 0, 16, 0);
+      bx(g, 2, 7.6, 7.6, mats.gun2, -6, 16, 0);
+      bx(g, 2, 7.6, 7.6, mats.gun2, 6, 16, 0);
+      for (const x of [-3.8, 3.8]) bx(g, 0.7, 7.25, 7.25, mats.lime, x, 16, 0);
+      for (const z of [-3.55, 3.55]) {
+        bx(g, 3.4, 0.55, 0.16, mats.lime, 0, 16.7, z);
+        bx(g, 0.55, 3, 0.16, mats.lime, 0, 15.9, z);
+      }
+      muzzle.position.set(0, 16, -3.5);
       break;
     default: // RIFLE
       bx(g, 3, 5, 16, mats.gun, 0, 1.5, -4);

@@ -95,6 +95,8 @@ export interface Welcome {
 export interface PodiumData {
   mode: GameMode;
   featured: ResultRow[]; // who stands on the podium (TDM: best of the winning team)
+  results: ResultRow[]; // full ranking, including both teams
+  myId: number;
   winner: number; // TDM winning team, -1 draw / FFA
   teams: number[];
   myTeam: number;
@@ -234,8 +236,6 @@ export class ClientGame {
 
     this.setRoster(welcome.roster);
     this.loadMap(this.match.map);
-    this.bombMesh.visible = false;
-    this.scene.add(this.bombMesh);
 
     net.onMessage((m) => this.onMessage(m));
     net.onClose((code, reason) => {
@@ -262,11 +262,6 @@ export class ClientGame {
   }
 
   // ------------------------------------------------------------------ setup
-
-  private readonly bombMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(14, 8, 10),
-    new THREE.MeshStandardMaterial({ color: '#484536', emissive: '#ff3c16', emissiveIntensity: 0.25 }),
-  );
 
   private onBeforeUnload = (e: BeforeUnloadEvent): void => {
     // guards against Ctrl+W (crouch + forward) closing the tab mid-match; off in dev for hot reload
@@ -373,7 +368,6 @@ export class ClientGame {
     this.collision = new CollisionWorld(this.map);
     this.world?.dispose();
     this.world = buildWorld(this.map, this.scene, this.settings.quality);
-    this.world.sites.visible = this.match.mode === 'defuse';
     const t = this.map.theme;
     this.sunDir.set(t.sunDir.x, t.sunDir.y, t.sunDir.z).normalize();
     this.view.setLighting(t.hemiSky, t.hemiGround, t.sun, t.sunIntensity);
@@ -435,7 +429,6 @@ export class ClientGame {
   }
 
   private onSnap(m: Extract<ServerMsg, { t: 'snap' }>): void {
-    this.match.bomb = m.bomb ?? undefined;
     // drift guard: snapshots should never be "from the future"
     const est = this.serverNow();
     if (m.time > est + 30) this.clockOffset += (m.time - est) * 0.5;
@@ -449,10 +442,9 @@ export class ClientGame {
         for (const c of this.pending) applyCmd(this.collision, this.me, c, this.myId);
         this.prev.set(this.me.x, this.me.y, this.me.z);
         this.correction.set(0, 0, 0);
-        // rounds start on the ground facing the map; skydivers look at the centre below
-        const defuse = this.match.mode === 'defuse';
-        this.input.yaw = defuse ? (m.look?.[0] ?? this.me.yaw) : Math.atan2(this.me.x, this.me.z);
-        this.input.pitch = defuse ? 0 : -0.55;
+        // Skydivers face the centre of the arena below.
+        this.input.yaw = Math.atan2(this.me.x, this.me.z);
+        this.input.pitch = -0.55;
         this.hud.setDeath(null);
         this.view.setWeapon(this.me.weapon);
       } else {
@@ -609,31 +601,18 @@ export class ClientGame {
   private onMatch(info: MatchInfo): void {
     const before = this.match;
     this.match = info;
-    if (info.mode === 'defuse' && info.bomb && info.bomb.round !== before.bomb?.round) {
-      // new round: the server respawns everyone, drop local prediction until the spawn snapshot
-      this.pending = [];
-      this.outbox = [];
-      this.alive = false;
-      this.correction.set(0, 0, 0);
-    }
     if (Array.isArray(info.teams)) this.teamScores = info.teams;
     if (info.mode !== before.mode) {
       this.dropAllAvatars();
       this.view.setSleeveColor(this.nameOf(this.myId).color);
     }
     if (info.map !== this.mapIndex) this.loadMap(info.map);
-    if (this.world) this.world.sites.visible = info.mode === 'defuse';
     if (info.phase === 'podium') {
       this.enterPodium(info);
     } else {
       if (this.podiumActive) this.exitPodium();
       const min = Math.round((info.endsAt - this.serverNow()) / 60000);
-      const bomb = info.bomb;
-      if (info.phase === 'live' && info.mode === 'defuse' && bomb) {
-        if (bomb.phase === 'ended' && before.bomb?.phase !== 'ended') this.hud.announce(bomb.reason, `${TEAMS[bomb.winner].name} venceram a rodada`, true);
-        else if (bomb.planted && !before.bomb?.planted) this.hud.announce('bomba plantada', this.myTeam === 1 ? 'segure E junto à C4 por 10 s' : 'protejam a C4', true);
-        else if (bomb.round !== before.bomb?.round) this.hud.announce(`rodada ${bomb.round}`, this.myTeam === 0 ? 'atacantes · levem a C4 até A ou B' : 'defensores · protejam A e B');
-      } else if (info.phase === 'live' && info.mode === 'tdm') {
+      if (info.phase === 'live' && info.mode === 'tdm') {
         const t = TEAMS[this.myTeam];
         this.hud.announce('team deathmatch', `${t ? `você é dos ${t.name}` : this.map.name} · ${info.limit ? `${info.limit} kills ou ` : ''}${min} min`);
       } else if (info.phase === 'live') this.hud.announce('todos contra todos', `${this.map.name} · ${min} min · mais kills vence`);
@@ -662,7 +641,7 @@ export class ClientGame {
     // free the mouse so people can click a map in the vote
     if (document.pointerLockElement) document.exitPointerLock();
     this.ui.showMenu(false);
-    this.ui.showPodium({ mode: info.mode, featured, winner, teams: info.teams ?? [0, 0], myTeam: this.myTeam, colorFor, vote: info.vote ?? null }, next);
+    this.ui.showPodium({ mode: info.mode, featured, results, myId: this.myId, winner, teams: info.teams ?? [0, 0], myTeam: this.myTeam, colorFor, vote: info.vote ?? null }, next);
   }
 
   /** Map vote on the podium (keys 1-3 or click). */
@@ -737,7 +716,7 @@ export class ClientGame {
   private tick(): void {
     this.tickCount++;
     const renderTime = Math.max(0, this.serverNow() - INTERP_DELAY_MS);
-    const canPlay = this.alive && this.match.phase !== 'podium' && this.match.bomb?.phase !== 'ended';
+    const canPlay = this.alive && this.match.phase !== 'podium';
     const buttons = this.input.buttons();
     const req = this.resolveWeaponRequest(this.input.takeWeaponRequest());
     const cmd: Cmd = { seq: ++this.seq, buttons, yaw: this.input.yaw, pitch: this.input.pitch, weapon: req, interp: Math.round(renderTime) };
@@ -745,10 +724,8 @@ export class ClientGame {
       const s = this.me;
       const before = { ground: s.onGround, drop: s.dropping, reload: s.reload, weapon: s.weapon, nextFire: s.nextFire, vy: s.vy, zoom: s.zoom };
       this.prev.set(s.x, s.y, s.z);
-      // holding E (plant/defuse) never fires, same rule as the server
-      const predicted = this.match.mode === 'defuse' && buttons & BTN.USE ? { ...cmd, buttons: buttons & ~(BTN.ATTACK | BTN.ATTACK2) } : cmd;
-      const shot = applyCmd(this.collision, s, predicted, this.myId);
-      this.pending.push(predicted);
+      const shot = applyCmd(this.collision, s, cmd, this.myId);
+      this.pending.push(cmd);
       if (this.pending.length > 180) this.pending.shift();
       if (shot) this.onLocalShot(shot);
       this.localSounds(before, cmd, shot);
@@ -946,13 +923,6 @@ export class ClientGame {
       hidden: !this.alive || zoomed || this.me.dropping,
     });
 
-    const bomb = this.match.bomb;
-    // attackers always see their C4; defenders only once it is planted
-    this.bombMesh.visible = this.match.mode === 'defuse' && !!bomb?.position && bomb.phase === 'playing' && (bomb.planted || this.myTeam === 0);
-    if (this.bombMesh.visible && bomb?.position) {
-      this.bombMesh.position.set(bomb.position.x, bomb.position.y + 4, bomb.position.z);
-      this.bombMesh.material.emissiveIntensity = bomb.planted ? (Math.sin(this.elapsed * 12) > 0 ? 2 : 0.1) : 0.1;
-    }
     this.renderer.render(this.scene, this.camera);
     if (this.alive && !zoomed && !this.me.dropping) this.view.render(this.renderer);
 
@@ -1061,13 +1031,11 @@ export class ClientGame {
     const def = weaponDef(s.weapon);
     const now = this.serverNow();
 
-    this.updateBombHud();
-
     // timer + leaders
     if (this.match.phase === 'live') {
       const left = Math.max(0, this.match.endsAt - now);
       const sec = Math.ceil(left / 1000);
-      hud.setTimer(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, `${this.map.name} · ${this.match.mode === 'defuse' ? `rodada ${this.match.bomb?.round ?? 1}${this.match.bomb?.planted ? ' · bomba' : ''}` : this.match.mode}`, sec <= 30);
+      hud.setTimer(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, `${this.map.name} · ${this.match.mode}`, sec <= 30);
       if (sec <= 10 && sec > 0 && sec !== this.lastBeep) {
         this.lastBeep = sec;
         this.sfx.beep(sec <= 3);
@@ -1083,12 +1051,11 @@ export class ClientGame {
     else hud.setLeaders(leaders, meRow);
     hud.setTeamBadge(tdm ? this.myTeam : -1);
     const title = `${this.map.name} · ${MODE_LABEL[this.match.mode]} · ${rows.length} jogador${rows.length === 1 ? '' : 'es'}`;
-    hud.showScoreboard(this.scoreboardOpen, rows, title, tdm ? this.teamScores : null, this.match.mode === 'defuse' ? 'rodadas' : 'kills');
+    hud.showScoreboard(this.scoreboardOpen, rows, title, tdm ? this.teamScores : null);
 
     if (!this.alive) {
       const left = Math.max(0, RESPAWN_TICKS * TICK_MS - (performance.now() - this.deathAt));
-      if (this.match.mode === 'defuse') hud.setRespawn(this.match.phase === 'live' ? 'aguardando a próxima rodada' : '');
-      else if (this.deathAt > 0) hud.setRespawn(left > 0 ? `voltando do céu em ${(left / 1000).toFixed(1)} s` : 'saltando…');
+      if (this.deathAt > 0) hud.setRespawn(left > 0 ? `voltando do céu em ${(left / 1000).toFixed(1)} s` : 'saltando…');
       hud.setCrosshair(0, 0, '', false);
       hud.setDrop(null);
       hud.setScope(false);
@@ -1135,43 +1102,12 @@ export class ClientGame {
     } else hud.setNetstat(null);
   }
 
-  private updateBombHud(): void {
-    const bomb = this.match.mode === 'defuse' ? this.match.bomb : undefined;
-    if (this.match.mode !== 'defuse' || this.match.phase === 'podium') {
-      this.hud.setObjective('', null);
-      return;
-    }
-    let text = 'defuse bomb · aguardando jogadores nos dois times';
-    let progress: number | null = null;
-    if (bomb?.phase === 'ended') text = `${bomb.reason} · ${TEAMS[bomb.winner].name} venceram`;
-    else if (bomb) {
-      const attacker = this.myTeam === 0;
-      if (!this.alive) text = `${attacker ? 'atacante' : 'defensor'} · aguarde a próxima rodada`;
-      else if (bomb.action?.id === this.myId) {
-        text = bomb.action.kind === 'plant' ? 'plantando · segure E e fique parado' : 'desarmando · segure E e fique parado';
-        progress = clamp((this.serverNow() - bomb.action.startedAt) / (bomb.action.endsAt - bomb.action.startedAt), 0, 1);
-      } else if (bomb.planted) text = attacker ? 'C4 plantada · impeçam o desarme' : 'C4 plantada · segure E perto dela por 10 s para desarmar';
-      else if (bomb.carrier === this.myId) text = 'você está com a C4 · segure E parado em A ou B por 3 s';
-      else if (attacker) text = bomb.carrier !== null ? `C4 com ${this.nameOf(bomb.carrier).name} · escoltem até A ou B` : 'C4 no chão · passe por cima para pegar';
-      else text = 'defensor · protejam A e B · sem respawn na rodada';
-    }
-    this.hud.setObjective(text, progress);
-  }
-
   private markers(): Marker[] {
     const out: Marker[] = [];
     const w = this.renderer.domElement.clientWidth;
     const h = this.renderer.domElement.clientHeight;
     const targets: { x: number; y: number; z: number; label: string }[] = [];
     for (const a of this.airdrops.values()) targets.push({ x: a.x, y: a.group.position.y + 70, z: a.z, label: a.label });
-    if (this.match.mode === 'defuse') {
-      const bomb = this.match.bomb;
-      // once planted only the C4 matters (its marker would sit on top of the site's)
-      for (const site of bomb?.planted ? [] : (this.map.defuse?.sites ?? [])) {
-        targets.push({ x: (site.min.x + site.max.x) / 2, y: site.min.y + 25, z: (site.min.z + site.max.z) / 2, label: site.id });
-      }
-      if (bomb?.position && bomb.phase === 'playing' && (bomb.planted || this.myTeam === 0)) targets.push({ ...bomb.position, label: 'C4' });
-    }
     for (const a of targets) {
       v3.set(a.x, a.y, a.z);
       const dist = v3.distanceTo(this.camera.position);
@@ -1211,8 +1147,6 @@ export class ClientGame {
     if (document.pointerLockElement) document.exitPointerLock();
     this.input.dispose();
     this.sfx.dispose();
-    this.bombMesh.geometry.dispose();
-    this.bombMesh.material.dispose();
     this.world?.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();

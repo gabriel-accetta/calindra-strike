@@ -98,13 +98,19 @@ export class ViewModel {
       mesh.rotation.set(rx, ry, 0);
       g.add(mesh);
     };
+    if (id === WEAPON.HAMMER) {
+      // Closed fist around the vertical shaft, wrist attached for the entire swing.
+      add(4.1, 4.6, 4.2, glove, 0, 0, 0);
+      add(4, 4, 14, this.sleeve, 2.2, -4.3, 5, 0.3, 0.62);
+      return;
+    }
     // right hand on the grip; forearm leaves the screen toward the bottom-right
     add(4.2, 4.2, 4.2, glove, 0.2, -2, 0.6);
     add(4.4, 4.4, 17, this.sleeve, 2.6, -7, 7.5, 0.3, 0.62);
     if (id === WEAPON.PISTOL) {
       add(4, 4, 4, glove, -2.2, -2.6, 0.4);
       add(4.2, 4.2, 17, this.sleeve, -4.8, -7.4, 7.2, -0.32, 0.6);
-    } else if (id !== WEAPON.HAMMER) {
+    } else {
       // left hand under the handguard; forearm goes down-left and back toward the camera
       const z = id === WEAPON.SMG ? -9 : id === WEAPON.SHOTGUN ? -17 : -16;
       add(4, 3.6, 4.6, glove, -0.4, -1.4, z);
@@ -122,10 +128,14 @@ export class ViewModel {
     this.arms(m.group, id);
     this.model = m;
     this.weaponId = id;
+    this.swing = 0;
+    this.flashT = 0;
+    this.flash.visible = false;
     m.group.scale.setScalar(0.62);
     if (id === WEAPON.HAMMER) {
-      m.group.position.set(7, -8, -17);
-      m.group.rotation.set(0.75, -0.25, 0.2);
+      m.group.scale.setScalar(0.5);
+      m.group.position.set(7.5, -5.5, -19.5);
+      m.group.rotation.set(0.12, -0.3, 0.25);
     } else if (id === WEAPON.PISTOL) {
       m.group.position.set(5.2, -5.6, -15);
       m.group.rotation.set(0, 0.05, 0);
@@ -199,13 +209,13 @@ export class ViewModel {
         this.swing = Math.max(0, this.swing - dt * (this.swingHeavy ? 2.4 : 4));
         const t = 1 - this.swing;
         const s = Math.sin(t * Math.PI);
-        const wind = this.swingHeavy ? 1.35 : 1.05;
+        const wind = this.swingHeavy ? 1.9 : 1.55;
         g.rotation.x -= s * wind;
         g.rotation.y += s * 0.55;
         g.rotation.z += s * 0.35;
-        g.position.x -= s * 4.5;
-        g.position.y += s * 1.5;
-        g.position.z -= s * 3;
+        g.position.x -= s * 3.5;
+        g.position.y -= s * 0.5;
+        g.position.z -= s * 2;
       }
     }
 

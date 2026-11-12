@@ -15,7 +15,6 @@ const game = new Game({
   warmupMinPlayers: cfg.warmupMinPlayers,
   modes: cfg.modes,
   maps: cfg.maps,
-  defuseRoundsToWin: cfg.defuseRoundsToWin,
   tdmLimit: cfg.tdmLimit,
   airdropFirstMs: cfg.airdropFirstMs,
   botFill: cfg.botFill,

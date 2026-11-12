@@ -40,30 +40,3 @@ describe.each(getMaps().map((m) => [m.id, m] as const))('map %s', (_id, map) => 
     expect(a.maxZ).toBeLessThan(b.maxZ);
   });
 });
-
-describe.each(getMaps().map((m) => [m.id, m] as const))('defuse layout on %s', (_id, map) => {
-  const world = new CollisionWorld(map);
-  const d = map.defuse;
-
-  it('has two bombsites inside the arena and standable spawns for both teams', () => {
-    expect(d?.sites.map((s) => s.id)).toEqual(['A', 'B']);
-    for (const s of d?.sites ?? []) {
-      expect(s.min.x).toBeGreaterThan(map.bounds.minX);
-      expect(s.max.x).toBeLessThan(map.bounds.maxX);
-      expect(s.min.z).toBeGreaterThan(map.bounds.minZ);
-      expect(s.max.z).toBeLessThan(map.bounds.maxZ);
-    }
-    for (const team of d?.spawns ?? []) {
-      expect(team.length).toBe(20);
-      for (const p of team) expect(world.hullOverlaps(p.x, p.y, p.z, STAND_HEIGHT)).toBe(false);
-    }
-  });
-
-  it('starts defenders closer to the sites than attackers', () => {
-    const dist = (team: number) => {
-      const s = d?.spawns[team][0];
-      return Math.min(...(d?.sites ?? []).map((site) => Math.hypot((site.min.x + site.max.x) / 2 - (s?.x ?? 0), (site.min.z + site.max.z) / 2 - (s?.z ?? 0))));
-    };
-    expect(dist(1)).toBeLessThan(dist(0));
-  });
-});

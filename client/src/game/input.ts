@@ -122,7 +122,6 @@ export class Input {
     if (this.keys.has('Space')) b |= BTN.JUMP;
     if (this.keys.has('ControlLeft') || this.keys.has('KeyC') || this.keys.has('ControlRight')) b |= BTN.DUCK;
     if (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) b |= BTN.WALK;
-    if (this.keys.has('KeyE')) b |= BTN.USE;
     if (this.keys.has('KeyR')) b |= BTN.RELOAD;
     if (this.mouse & 1) b |= BTN.ATTACK;
     if (this.mouse & 4) b |= BTN.ATTACK2;

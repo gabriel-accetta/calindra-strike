@@ -1,4 +1,4 @@
-import { BTN, CollisionWorld, type GameEvent, MapBuilder, WEAPON, getMaps } from '@calindra-strike/shared';
+import { BTN, CollisionWorld, type GameEvent, type MatchInfo, MapBuilder, WEAPON, getMaps } from '@calindra-strike/shared';
 import { describe, expect, it } from 'vitest';
 import { Game, type ServerPlayer } from '../src/game.ts';
 
@@ -109,6 +109,29 @@ describe('Game', () => {
     expect(game.phase).toBe('live');
     expect(game.mapIndex).toBe(1);
     expect(a.kills).toBe(0);
+  });
+
+  it.each(['tdm', 'ffa'] as const)('keeps every player in the final %s ranking, including zero kills', (mode) => {
+    const messages: any[] = [];
+    const game = new Game({ maxPlayers: 24, matchMs: 60_000, podiumMs: 5000, warmupMinPlayers: 2, modes: [mode] });
+    const players = Array.from({ length: 8 }, (_, i) => game.join(`Player ${i}`, i, WEAPON.RIFLE, (raw) => messages.push(JSON.parse(raw))) as ServerPlayer);
+    players.forEach((p, i) => {
+      p.kills = i * 2;
+      p.deaths = 8 - i;
+      p.headshots = i;
+    });
+    game.teamScores[0] = 30;
+    game.teamScores[1] = 10;
+    game.phaseEnds = game.now();
+    game.update();
+    const final = messages.filter((m) => m.t === 'match').at(-1).match as MatchInfo;
+    expect(final.phase).toBe('podium');
+    expect(final.results?.map((r) => r.kills)).toEqual([14, 12, 10, 8, 6, 4, 2, 0]);
+    expect(new Set(final.results?.map((r) => r.id))).toEqual(new Set(players.map((p) => p.id)));
+    if (mode === 'tdm') expect(new Set(final.results?.map((r) => r.team))).toEqual(new Set([0, 1]));
+    game.join('Late spectator', 0, WEAPON.RIFLE, (raw) => messages.push(JSON.parse(raw)));
+    const welcome = messages.filter((m) => m.t === 'welcome').at(-1);
+    expect(welcome.match.results).toEqual(final.results);
   });
 
   it('drops a legendary airdrop that a player can claim', () => {

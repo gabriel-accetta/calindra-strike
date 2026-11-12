@@ -12,7 +12,6 @@ export interface Config {
   warmupMinPlayers: number;
   modes: GameMode[];
   maps: string[]; // empty = every map
-  defuseRoundsToWin: number;
   tdmLimit: number;
   airdropFirstMs: number;
   botFill: number;
@@ -28,8 +27,7 @@ function int(name: string, def: number, lo: number, hi: number): number {
   return v;
 }
 
-const ALL_MODES: GameMode[] = ['tdm', 'ffa', 'defuse'];
-const DEFAULT_MODES: GameMode[] = ['tdm', 'ffa'];
+const ALL_MODES: GameMode[] = ['tdm', 'ffa'];
 
 function list(raw: string | undefined): string[] {
   return (raw ?? '')
@@ -39,14 +37,14 @@ function list(raw: string | undefined): string[] {
 }
 
 /**
- * GAME_MODES picks any set of modes (e.g. "tdm,defuse"). The older single GAME_MODE
+ * GAME_MODES picks any set of modes (e.g. "tdm,ffa"). The older single GAME_MODE
  * still works: "mixed" = TDM + FFA, or one mode. Default: TDM + FFA.
  */
 export function modeList(modesRaw: string | undefined, legacyRaw: string | undefined): GameMode[] {
   const items = list(modesRaw);
   if (items.length === 0) {
     const legacy = (legacyRaw ?? '').trim().toLowerCase();
-    if (!legacy) return [...DEFAULT_MODES];
+    if (!legacy) return [...ALL_MODES];
     if (legacy === 'mixed') return ['tdm', 'ffa'];
     items.push(legacy);
   }
@@ -86,7 +84,6 @@ export function loadConfig(): Config {
     warmupMinPlayers: int('WARMUP_MIN_PLAYERS', 2, 1, 64),
     modes: modeList(process.env.GAME_MODES, process.env.GAME_MODE),
     maps: mapList(process.env.GAME_MAPS),
-    defuseRoundsToWin: int('DEFUSE_ROUNDS_TO_WIN', 8, 1, 30),
     tdmLimit: int('TDM_SCORE_LIMIT', 50, 0, 1000),
     airdropFirstMs: int('AIRDROP_FIRST_SECONDS', 25, 1, 600) * 1000,
     botFill: int('BOT_FILL', 0, 0, 64),
