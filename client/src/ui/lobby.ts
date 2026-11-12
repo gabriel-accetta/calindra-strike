@@ -1,4 +1,4 @@
-import { PLAYER_COLORS, PRIMARY_CHOICES, WEAPON, type WeaponId, sanitizeName, weaponDef } from '@calindra-strike/shared';
+import { type GameMode, MODE_LABEL, PLAYER_COLORS, PRIMARY_CHOICES, WEAPON, type WeaponId, sanitizeName, weaponDef } from '@calindra-strike/shared';
 import { SERVER_HTTP } from '../config.ts';
 import { type Settings, saveSettings } from '../settings.ts';
 import { ICONS, eitriLogo, gameLogo, h, svg } from './dom.ts';
@@ -11,7 +11,8 @@ interface Status {
   endsInMs: number | null;
   leaders: { name: string; kills: number }[];
   codeRequired: boolean;
-  mode?: 'ffa' | 'tdm';
+  mode?: GameMode;
+  modes?: GameMode[];
   bots?: number;
   teams?: number[] | null;
 }
@@ -115,6 +116,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
   const err = h('p', { class: 'form-error', role: 'alert', text: error });
   const play = h('button', { class: 'btn btn-primary play', type: 'submit', text: 'jogar agora' });
 
+  const footnote = h('p', { class: 'footnote', text: 'Partidas de 5 min · quem fizer mais kills sobe no pódio' });
   const form = h('form', { class: 'card', novalidate: true }, [
     server,
     h('div', { class: 'field' }, [h('label', { class: 'label', for: 'nick', text: 'apelido' }), nameInput]),
@@ -125,7 +127,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
     err,
     leaders,
     h('p', { class: 'mobile-note', text: 'Calindra Strike precisa de mouse e teclado. Abra no computador.' }),
-    h('p', { class: 'footnote', text: 'Partidas de 5 min · quem fizer mais kills sobe no pódio' }),
+    footnote,
   ]);
 
   form.addEventListener('submit', (e) => {
@@ -167,7 +169,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       ' com o time.',
     ]),
     h('div', { class: 'features' }, [
-      h('span', { class: 'chip' }, [h('i'), 'Team Deathmatch + todos contra todos']),
+      h('span', { class: 'chip' }, [h('i'), 'TDM · todos contra todos · defuse bomb']),
       h('span', { class: 'chip' }, [h('i'), 'AWP no airdrop']),
       h('span', { class: 'chip' }, [h('i'), 'Pódio dos 3 melhores']),
       h('span', { class: 'chip' }, [h('i'), 'Bunny hop liberado']),
@@ -178,7 +180,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       key('Ctrl', 'agachar / mergulhar'),
       key('Shift', 'andar em silêncio'),
       key('1 2 3', 'armas · Q última'),
-      key('R', 'recarregar'),
+      key('R', 'recarregar · E plantar/desarmar'),
       key('Mouse 2', 'luneta da AWP'),
       key('Tab', 'placar · Y chat'),
     ]),
@@ -210,7 +212,12 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       leaders.replaceChildren();
       return;
     }
-    const mode = status.mode === 'tdm' ? `team deathmatch${status.teams ? ` ${status.teams[0]}×${status.teams[1]}` : ''}` : 'todos contra todos';
+    footnote.textContent =
+      status.mode === 'defuse'
+        ? 'Rodadas sem respawn · plante ou desarme a C4 com E'
+        : 'Partidas de 5 min · quem fizer mais kills sobe no pódio';
+    const label = MODE_LABEL[status.mode ?? 'ffa'] ?? 'todos contra todos';
+    const mode = status.mode !== 'ffa' && status.teams ? `${label} ${status.teams[0]}×${status.teams[1]}` : label;
     const phase =
       status.phase === 'live' && status.endsInMs !== null
         ? `${status.map} · ${mode} · ${fmt(status.endsInMs)}`

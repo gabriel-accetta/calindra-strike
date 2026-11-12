@@ -14,6 +14,8 @@ const game = new Game({
   podiumMs: cfg.podiumMs,
   warmupMinPlayers: cfg.warmupMinPlayers,
   modes: cfg.modes,
+  maps: cfg.maps,
+  defuseRoundsToWin: cfg.defuseRoundsToWin,
   tdmLimit: cfg.tdmLimit,
   airdropFirstMs: cfg.airdropFirstMs,
   botFill: cfg.botFill,
@@ -272,7 +274,7 @@ setInterval(() => {
 }, 60_000).unref();
 
 server.listen(cfg.port, cfg.host, () => {
-  log(`calindra-strike server on ${cfg.host}:${cfg.port}`, `origins=${[...cfg.allowedOrigins].join(',')}`, `code=${cfg.joinCode ? 'on' : 'off'}`, `modes=${cfg.modes}`, `tdmLimit=${cfg.tdmLimit}`, `botFill=${cfg.botFill}`, `botSkill=${cfg.botSkill}`);
+  log(`calindra-strike server on ${cfg.host}:${cfg.port}`, `origins=${[...cfg.allowedOrigins].join(',')}`, `code=${cfg.joinCode ? 'on' : 'off'}`, `modes=${cfg.modes.join('+')}`, `maps=${cfg.maps.join('+') || 'all'}`, `tdmLimit=${cfg.tdmLimit}`, `botFill=${cfg.botFill}`, `botSkill=${cfg.botSkill}`);
 });
 
 process.on('uncaughtException', (err) => {

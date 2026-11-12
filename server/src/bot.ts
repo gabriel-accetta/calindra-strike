@@ -90,7 +90,7 @@ export class BotBrain {
   }
 
   private isEnemy(self: ServerPlayer, q: ServerPlayer, mode: GameMode): boolean {
-    return q !== self && q.alive && (mode !== 'tdm' || q.team !== self.team);
+    return q !== self && q.alive && (mode === 'ffa' || q.team !== self.team);
   }
 
   private visible(env: BotEnv, ex: number, ey: number, ez: number, q: ServerPlayer): boolean {

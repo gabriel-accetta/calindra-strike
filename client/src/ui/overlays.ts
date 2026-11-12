@@ -1,4 +1,4 @@
-import { PRIMARY_CHOICES, TEAMS, type VoteInfo, type WeaponId, getMap, weaponDef } from '@calindra-strike/shared';
+import { MODE_LABEL, PRIMARY_CHOICES, TEAMS, type VoteInfo, type WeaponId, getMap, weaponDef } from '@calindra-strike/shared';
 import type { PodiumData, TeamState } from '../game/client.ts';
 import { CROSSHAIR_COLORS, type Settings, saveSettings } from '../settings.ts';
 import { gameLogo, h } from './dom.ts';
@@ -38,7 +38,7 @@ export class Overlays {
       h('div', { class: 'click-to-play' }, [
         gameLogo('game-logo cta-logo'),
         h('h2', { class: 'wordmark', text: 'pronto?' }),
-        h('p', { text: 'Você vai cair do céu. Planeje com WASD e escolha onde pousar.' }),
+        h('p', { text: 'Planeje a queda com WASD. No defuse bomb, E planta ou desarma a C4.' }),
         play,
         h('p', { class: 'label', text: 'esc solta o mouse · tab mostra o placar' }),
       ]),
@@ -173,11 +173,11 @@ export class Overlays {
     this.updateVotes(data.vote?.counts ?? [], -1);
     this.nextMap = next;
     this.lastSeconds = -1;
-    const tdm = data.mode === 'tdm';
+    const tdm = data.mode !== 'ffa';
     this.podiumScore.classList.toggle('hidden', !tdm);
     if (tdm) {
       const w = data.winner;
-      this.podiumLabel.textContent = w < 0 ? 'fim de partida · team deathmatch' : w === data.myTeam ? 'seu time venceu!' : 'não foi dessa vez';
+      this.podiumLabel.textContent = w < 0 ? `fim de partida · ${MODE_LABEL[data.mode]}` : w === data.myTeam ? 'seu time venceu!' : 'não foi dessa vez';
       this.podiumTitle.textContent = w < 0 ? 'empate' : `${TEAMS[w].name} venceram`;
       this.podiumTitle.style.color = w < 0 ? '' : TEAMS[w].color;
       this.podiumScore.replaceChildren(
@@ -233,7 +233,7 @@ export class Overlays {
           },
           [
             h('span', { class: 'kbd', text: String(i + 1) }),
-            h('span', { class: 'vote-text' }, [h('b', { text: getMap(o.map).name }), h('small', { text: o.mode === 'tdm' ? 'team deathmatch' : 'todos contra todos' })]),
+            h('span', { class: 'vote-text' }, [h('b', { text: getMap(o.map).name }), h('small', { text: MODE_LABEL[o.mode] })]),
             h('span', { class: 'vote-count', text: `${n}` }),
             h('i', { class: 'vote-bar', style: `width:${pct}%` }),
           ],

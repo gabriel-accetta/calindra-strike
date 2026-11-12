@@ -91,6 +91,8 @@ export interface WorldView {
   sun: THREE.DirectionalLight;
   hemi: THREE.HemisphereLight;
   fog: THREE.Fog;
+  /** Bombsite floor markings, only shown in defuse mode. */
+  sites: THREE.Group;
   dispose(): void;
 }
 
@@ -254,6 +256,30 @@ export function buildWorld(map: MapDef, scene: THREE.Scene, quality: 'high' | 'l
     group.add(mesh);
   }
 
+  const sites = new THREE.Group();
+  sites.visible = false;
+  for (const site of map.defuse?.sites ?? []) {
+    const y = site.min.y + 0.6;
+    const w = site.max.x - site.min.x;
+    const d = site.max.z - site.min.z;
+    const fill = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: '#a5fa00', transparent: true, opacity: 0.07, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
+    );
+    fill.position.set(site.min.x + w / 2, y, site.min.z + d / 2);
+    const outline = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(site.min.x, y, site.min.z),
+        new THREE.Vector3(site.max.x, y, site.min.z),
+        new THREE.Vector3(site.max.x, y, site.max.z),
+        new THREE.Vector3(site.min.x, y, site.max.z),
+      ]),
+      new THREE.LineBasicMaterial({ color: '#a5fa00' }),
+    );
+    sites.add(fill, outline);
+  }
+  group.add(sites);
+
   // glow at map light points
   for (const l of map.lights) {
     const s = new THREE.Sprite(glowSprite(l.color));
@@ -297,6 +323,7 @@ export function buildWorld(map: MapDef, scene: THREE.Scene, quality: 'high' | 'l
     sun,
     hemi,
     fog,
+    sites,
     dispose() {
       scene.remove(group);
       group.traverse((o) => {

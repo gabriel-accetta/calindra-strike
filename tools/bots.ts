@@ -43,7 +43,7 @@ function bot(i: number): void {
     if (m.t === 'snap') {
       me = m.me;
       serverTime = m.time;
-      others = m.ps.filter((p: number[]) => p[0] !== id && !(mode === 'tdm' && teams.get(p[0]) === teams.get(id)));
+      others = m.ps.filter((p: number[]) => p[0] !== id && !(mode !== 'ffa' && teams.get(p[0]) === teams.get(id)));
     }
     if (m.t === 'reject') console.log('rejected', m.reason);
   });

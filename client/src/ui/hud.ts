@@ -61,6 +61,10 @@ export class Hud {
   private readonly protect = h('div', { class: 'protect-vignette' });
   private readonly scope = h('div', { class: 'scope hidden' });
   private readonly teamBadge = h('div', { class: 'team-badge hidden' });
+  private readonly objectiveText = h('div', { class: 'objective-text' });
+  private readonly objectiveFill = h('i');
+  private readonly objectiveBar = h('div', { class: 'objective-bar hidden' }, [this.objectiveFill]);
+  private readonly objective = h('div', { class: 'objective glass hidden', role: 'status' }, [this.objectiveText, this.objectiveBar]);
   private readonly center = h('div', { class: 'center' });
   private readonly dropAlt = h('div', { class: 'alt', text: '' });
   private readonly drop = h('div', { class: 'drop-hud glass hidden' }, [
@@ -108,6 +112,7 @@ export class Hud {
       this.markersEl,
       h('div', { class: 'topbar' }, [this.leadersLeft, this.timer, this.leadersRight]),
       this.feed,
+      this.objective,
       h('div', { class: 'vitals' }, [this.teamBadge, this.hp, this.armor]),
       h('div', { class: 'ammo' }, [this.reloadBar, h('div', { class: 'main glass' }, [this.wBox, this.ammoCount]), this.slotsEl]),
       this.ch,
@@ -128,6 +133,16 @@ export class Hud {
     if (this.last.get(key) === v) return;
     this.last.set(key, v);
     apply();
+  }
+
+  /** Defuse objective line; progress 0..1 shows the plant/defuse bar, null hides it. */
+  setObjective(text: string, progress: number | null): void {
+    this.set('objective', text, () => {
+      this.objective.classList.toggle('hidden', !text);
+      this.objectiveText.textContent = text;
+    });
+    this.objectiveBar.classList.toggle('hidden', progress === null);
+    this.objectiveFill.style.transform = `scaleX(${progress ?? 0})`;
   }
 
   setTimer(text: string, sub: string, urgent: boolean): void {
@@ -333,10 +348,10 @@ export class Hud {
     } else this.chatInput.blur();
   }
 
-  showScoreboard(show: boolean, rows: ScoreRow[], title: string, teams: number[] | null): void {
+  showScoreboard(show: boolean, rows: ScoreRow[], title: string, teams: number[] | null, unit = 'kills'): void {
     this.scoreboard.classList.toggle('hidden', !show);
     if (!show) return;
-    this.set('sb', JSON.stringify([rows, title, teams]), () => {
+    this.set('sb', JSON.stringify([rows, title, teams, unit]), () => {
       this.sbTitle.textContent = title;
       const line = (r: ScoreRow, i: number) =>
         h('tr', { class: r.me ? 'me' : '' }, [
@@ -356,7 +371,7 @@ export class Hud {
         const mine = rows.filter((r) => r.team === t);
         out.push(
           h('tr', { class: 'team-row', style: `--team:${TEAMS[t].color}` }, [
-            h('td', { colspan: 6 }, [h('span', { class: 'team-name', text: TEAMS[t].name }), h('span', { class: 'team-total', text: `${teams[t] ?? 0} kills · ${mine.length} jogador${mine.length === 1 ? '' : 'es'}` })]),
+            h('td', { colspan: 6 }, [h('span', { class: 'team-name', text: TEAMS[t].name }), h('span', { class: 'team-total', text: `${teams[t] ?? 0} ${unit} · ${mine.length} jogador${mine.length === 1 ? '' : 'es'}` })]),
           ]),
           ...mine.map(line),
         );

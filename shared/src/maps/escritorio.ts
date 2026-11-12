@@ -1,5 +1,19 @@
 import { MapBuilder } from './builder.ts';
+import type { DefuseSpec } from './defuse.ts';
 import type { MapDef } from './types.ts';
+
+/**
+ * Bomb defusal in the office: attackers start by the north wall, defenders by the
+ * south wall. A: the open floor south-east of the island; B: the lounge south-west.
+ */
+export const DEFUSE_ESCRITORIO: DefuseSpec = {
+  attackers: { x: -60, z: -900, yaw: Math.PI },
+  defenders: { x: 60, z: 900, yaw: 0 },
+  sites: [
+    { id: 'A', rect: [640, 140, 1120, 460] },
+    { id: 'B', rect: [-1120, 140, -640, 460] },
+  ],
+};
 
 /**
  * ESCRITÓRIO: the Calindra office, "open space" taken literally: no roof.
@@ -122,6 +136,13 @@ export function buildEscritorio(): MapDef {
     b.deco(X - 2, 50, -330, X, 210, -170, 'eitri');
     b.deco(-200, 40, -Z, -40, 200, -Z + 2, 'logo');
   });
+
+  // bombsite cover (defuse mode; plain extra cover in the other modes)
+  b.add(680, 0, 160, 800, 30, 200, 'desk');
+  b.add(960, 0, 180, 1100, 56, 212, 'metal');
+  b.crate(1020, 390, 56);
+  b.crate(-1040, 200, 48);
+  b.add(-1110, 0, 300, -990, 56, 332, 'metal');
 
   return {
     id: 'escritorio',

@@ -101,7 +101,14 @@ export function encodeCmd(c: Cmd): number[] {
 // ------------------------------------------------------------ server -> client
 
 export type MatchPhase = 'warmup' | 'live' | 'podium';
-export type GameMode = 'ffa' | 'tdm';
+export type GameMode = 'ffa' | 'tdm' | 'defuse';
+export const GAME_MODES: readonly GameMode[] = ['tdm', 'ffa', 'defuse'];
+
+export const MODE_LABEL: Record<GameMode, string> = {
+  ffa: 'todos contra todos',
+  tdm: 'team deathmatch',
+  defuse: 'defuse bomb',
+};
 
 export interface ResultRow {
   id: number;
@@ -115,13 +122,27 @@ export interface ResultRow {
   bot: number; // 1 for server bots
 }
 
+/** Bomb defusal round state (mode 'defuse'). Team 0 attacks with the C4, team 1 defends. */
+export interface BombState {
+  round: number;
+  phase: 'playing' | 'ended';
+  carrier: number | null;
+  position: { x: number; y: number; z: number } | null;
+  planted: boolean;
+  explodesAt: number;
+  winner: number;
+  reason: string;
+  action: { id: number; kind: 'plant' | 'defuse'; startedAt: number; endsAt: number } | null;
+}
+
 export interface MatchInfo {
+  bomb?: BombState;
   phase: MatchPhase;
   mode: GameMode;
   map: number;
   endsAt: number; // server time ms
   teams: number[]; // team scores [bulldogs, martelos] (TDM)
-  limit: number; // TDM kill limit, 0 = timer only
+  limit: number; // TDM kill limit or defuse rounds to win, 0 = timer only
   results?: ResultRow[];
   winner?: number; // TDM: winning team, -1 draw
   next?: { map: number; mode: GameMode }; // podium: upcoming match if nobody votes
@@ -152,7 +173,7 @@ export type ServerMsg =
   | { t: 'welcome'; id: number; time: number; roster: RosterEntry[]; match: MatchInfo; maxPlayers: number; token: string }
   | { t: 'reject'; reason: string; code?: string }
   | { t: 'votes'; counts: number[] }
-  | { t: 'snap'; time: number; ack: number; me: number[] | null; ps: number[][]; ad: number[][] }
+  | { t: 'snap'; time: number; ack: number; me: number[] | null; ps: number[][]; ad: number[][]; bomb?: BombState | null; look?: number[] }
   | { t: 'ev'; e: GameEvent[] }
   | { t: 'roster'; roster: RosterEntry[] }
   | { t: 'score'; s: number[][]; ts: number[] }
