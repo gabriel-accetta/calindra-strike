@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseClientMessage, sanitizeChat, sanitizeName } from '../src/index.ts';
+import { BTN, parseClientMessage, sanitizeChat, sanitizeName } from '../src/index.ts';
 
 describe('parseClientMessage', () => {
   it('accepts a valid hello and input packet', () => {
@@ -25,6 +25,11 @@ describe('parseClientMessage', () => {
     '{"t":"__proto__"}',
   ])('rejects %s', (raw) => {
     expect(parseClientMessage(raw)).toBeNull();
+  });
+
+  it('accepts the bomb interaction button but rejects unknown button bits', () => {
+    expect(parseClientMessage(JSON.stringify({ t: 'in', c: [[1, BTN.USE, 0, 0, 0, 0]] }))).not.toBeNull();
+    expect(parseClientMessage(JSON.stringify({ t: 'in', c: [[1, 2048, 0, 0, 0, 0]] }))).toBeNull();
   });
 
   it('rejects oversized payloads and too many commands', () => {

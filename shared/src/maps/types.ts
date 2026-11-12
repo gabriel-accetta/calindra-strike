@@ -60,8 +60,23 @@ export interface MapDef {
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   dropArea: { minX: number; maxX: number; minZ: number; maxZ: number };
   dropHeight: number;
+  defuse?: {
+    spawns: { x: number; y: number; z: number; yaw: number }[][];
+    sites: { id: string; min: Vec3; max: Vec3 }[];
+  };
+  spawnPoints?: { x: number; z: number }[];
   airdropPoints: { x: number; z: number }[];
   boxes: Box[];
+  brushes?: Brush[];
   lights: MapLight[];
   theme: MapTheme;
+}
+
+/** Convex GoldSrc geometry. Plane interiors satisfy n · position <= distance. */
+export interface Brush {
+  min: Vec3;
+  max: Vec3;
+  planes: number[][];
+  faces: { vertices: number[][]; mat: Mat }[];
+  solid: boolean;
 }

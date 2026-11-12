@@ -8,10 +8,12 @@ export interface Config {
   matchMs: number;
   podiumMs: number;
   warmupMinPlayers: number;
-  modes: 'mixed' | 'ffa' | 'tdm';
+  modes: 'mixed' | 'ffa' | 'tdm' | 'defuse';
   tdmLimit: number;
+  defuseRoundsToWin: number;
   airdropFirstMs: number;
   trustProxy: boolean;
+  mapId?: string;
 }
 
 function int(name: string, def: number, lo: number, hi: number): number {
@@ -22,10 +24,10 @@ function int(name: string, def: number, lo: number, hi: number): number {
   return v;
 }
 
-function modeSetting(raw: string | undefined): 'mixed' | 'ffa' | 'tdm' {
+function modeSetting(raw: string | undefined): 'mixed' | 'ffa' | 'tdm' | 'defuse' {
   const v = (raw ?? 'mixed').trim().toLowerCase();
-  if (v === 'mixed' || v === 'ffa' || v === 'tdm') return v;
-  throw new Error(`Invalid GAME_MODE: ${raw} (use mixed, ffa or tdm)`);
+  if (v === 'mixed' || v === 'ffa' || v === 'tdm' || v === 'defuse') return v;
+  throw new Error(`Invalid GAME_MODE: ${raw} (use mixed, ffa, tdm or defuse)`);
 }
 
 export function loadConfig(): Config {
@@ -48,8 +50,10 @@ export function loadConfig(): Config {
     podiumMs: int('PODIUM_SECONDS', 15, 3, 120) * 1000,
     warmupMinPlayers: int('WARMUP_MIN_PLAYERS', 2, 1, 64),
     modes: modeSetting(process.env.GAME_MODE),
+    defuseRoundsToWin: int('DEFUSE_ROUNDS_TO_WIN', 8, 1, 30),
     tdmLimit: int('TDM_SCORE_LIMIT', 50, 0, 1000),
     airdropFirstMs: int('AIRDROP_FIRST_SECONDS', 25, 1, 600) * 1000,
+    mapId: process.env.GAME_MAP?.trim() || undefined,
     trustProxy: process.env.TRUST_PROXY === '1',
   };
 }

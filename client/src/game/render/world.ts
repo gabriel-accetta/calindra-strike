@@ -238,6 +238,31 @@ export function buildWorld(map: MapDef, scene: THREE.Scene, quality: 'high' | 'l
     }
   }
 
+  for (const brush of map.brushes ?? []) {
+    for (const face of brush.faces) {
+      let bk = buckets.get(face.mat);
+      if (!bk) {
+        bk = { pos: [], nrm: [], uv: [], col: [], idx: [] };
+        buckets.set(face.mat, bk);
+      }
+      const [a, b, c] = face.vertices;
+      const normal = new THREE.Vector3().crossVectors(
+        new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]),
+        new THREE.Vector3(c[0] - a[0], c[1] - a[1], c[2] - a[2]),
+      ).normalize();
+      const base = bk.pos.length / 3;
+      const scale = TEX_SCALE[face.mat] ?? 128;
+      for (const v of face.vertices) {
+        bk.pos.push(...v);
+        bk.nrm.push(normal.x, normal.y, normal.z);
+        bk.uv.push((Math.abs(normal.x) > 0.7 ? v[2] : v[0]) / scale, (Math.abs(normal.y) > 0.7 ? v[2] : v[1]) / scale);
+        const shade = face.mat === 'brick' ? [1, 0.82, 0.6] : [1, 1, 1];
+        bk.col.push(...shade);
+      }
+      for (let i = 1; i < face.vertices.length - 1; i++) bk.idx.push(base, base + i, base + i + 1);
+    }
+  }
+
   for (const [mat, bk] of buckets) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(bk.pos, 3));
@@ -252,6 +277,21 @@ export function buildWorld(map: MapDef, scene: THREE.Scene, quality: 'high' | 'l
     mesh.receiveShadow = mat !== 'lime' && mat !== 'glass';
     if (mat === 'glass') mesh.renderOrder = 5;
     group.add(mesh);
+  }
+
+  for (const site of map.defuse?.sites ?? []) {
+    const y = site.min.y + 1;
+    const points = [
+      new THREE.Vector3(site.min.x, y, site.min.z),
+      new THREE.Vector3(site.max.x, y, site.min.z),
+      new THREE.Vector3(site.max.x, y, site.max.z),
+      new THREE.Vector3(site.min.x, y, site.max.z),
+    ];
+    const outline = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(points),
+      new THREE.LineBasicMaterial({ color: '#ffc45b' }),
+    );
+    group.add(outline);
   }
 
   // glow at map light points

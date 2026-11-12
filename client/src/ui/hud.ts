@@ -59,6 +59,9 @@ export class Hud {
   private readonly vignette = h('div', { class: 'vignette' });
   private readonly protect = h('div', { class: 'protect-vignette' });
   private readonly scope = h('div', { class: 'scope hidden' });
+  private readonly objectiveText = h('div');
+  private readonly objectiveProgress = h('progress', { max: 1, value: 0, class: 'hidden' });
+  private readonly objective = h('div', { class: 'objective glass hidden', role: 'status' }, [this.objectiveText, this.objectiveProgress]);
   private readonly teamBadge = h('div', { class: 'team-badge hidden' });
   private readonly center = h('div', { class: 'center' });
   private readonly dropAlt = h('div', { class: 'alt', text: '' });
@@ -107,6 +110,7 @@ export class Hud {
       this.markersEl,
       h('div', { class: 'topbar' }, [this.leadersLeft, this.timer, this.leadersRight]),
       this.feed,
+      this.objective,
       h('div', { class: 'vitals' }, [this.teamBadge, this.hp, this.armor]),
       h('div', { class: 'ammo' }, [this.reloadBar, h('div', { class: 'main glass' }, [this.wBox, this.ammoCount]), this.slotsEl]),
       this.ch,
@@ -127,6 +131,13 @@ export class Hud {
     if (this.last.get(key) === v) return;
     this.last.set(key, v);
     apply();
+  }
+
+  setObjective(text: string, progress: number | null): void {
+    this.objective.classList.toggle('hidden', !text);
+    this.objectiveText.textContent = text;
+    this.objectiveProgress.classList.toggle('hidden', progress === null);
+    this.objectiveProgress.value = progress ?? 0;
   }
 
   setTimer(text: string, sub: string, urgent: boolean): void {

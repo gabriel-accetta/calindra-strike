@@ -6,6 +6,7 @@ import {
   DEG,
   DUCK_EYE,
   type GameEvent,
+  type GameMode,
   INTERP_DELAY_MS,
   type MapDef,
   type MatchInfo,
@@ -89,7 +90,7 @@ export interface Welcome {
 }
 
 export interface PodiumData {
-  mode: 'ffa' | 'tdm';
+  mode: GameMode;
   featured: ResultRow[]; // who stands on the podium (TDM: best of the winning team)
   winner: number; // TDM winning team, -1 draw / FFA
   teams: number[];
@@ -227,6 +228,8 @@ export class ClientGame {
     this.setRoster(welcome.roster);
     this.loadMap(this.match.map);
 
+    this.bombMesh.visible = false;
+    this.scene.add(this.bombMesh);
     net.onMessage((m) => this.onMessage(m));
     net.onClose((code, reason) => {
       if (!this.running) return;
@@ -251,6 +254,11 @@ export class ClientGame {
   }
 
   // ------------------------------------------------------------------ setup
+
+  private readonly bombMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(14, 8, 10),
+    new THREE.MeshStandardMaterial({ color: '#484536', emissive: '#ff3c16', emissiveIntensity: 0.25 }),
+  );
 
   private onBeforeUnload = (e: BeforeUnloadEvent): void => {
     // guards against Ctrl+W (crouch + forward) closing the tab mid-match; off in dev for hot reload
@@ -320,7 +328,7 @@ export class ClientGame {
   private nameOf(id: number): { name: string; color: string; team: number } {
     const n = this.names.get(id);
     if (!n) return { name: `#${id}`, color: '#9b9b94', team: -1 };
-    const color = this.match.mode === 'tdm' && n.team >= 0 ? TEAMS[n.team].color : n.personal;
+    const color = this.match.mode !== 'ffa' && n.team >= 0 ? TEAMS[n.team].color : n.personal;
     return { name: n.name, color, team: n.team };
   }
 
@@ -330,7 +338,7 @@ export class ClientGame {
 
   private isTeammate(id: number): boolean {
     const t = this.myTeam;
-    return this.match.mode === 'tdm' && t >= 0 && this.names.get(id)?.team === t;
+    return this.match.mode !== 'ffa' && t >= 0 && this.names.get(id)?.team === t;
   }
 
   teamState(): TeamState | null {
@@ -414,6 +422,7 @@ export class ClientGame {
   }
 
   private onSnap(m: Extract<ServerMsg, { t: 'snap' }>): void {
+    this.match.bomb = m.bomb ?? undefined;
     // drift guard: snapshots should never be "from the future"
     const est = this.serverNow();
     if (m.time > est + 30) this.clockOffset += (m.time - est) * 0.5;
@@ -427,8 +436,8 @@ export class ClientGame {
         for (const c of this.pending) applyCmd(this.collision, this.me, c, this.myId);
         this.prev.set(this.me.x, this.me.y, this.me.z);
         this.correction.set(0, 0, 0);
-        this.input.yaw = Math.atan2(this.me.x, this.me.z);
-        this.input.pitch = -0.55;
+        this.input.yaw = this.match.mode === 'defuse' ? (m.look?.[0] ?? 0) : Math.atan2(this.me.x, this.me.z);
+        this.input.pitch = this.match.mode === 'defuse' ? 0 : -0.55;
         this.hud.setDeath(null);
         this.view.setWeapon(this.me.weapon);
       } else {
@@ -585,6 +594,12 @@ export class ClientGame {
   private onMatch(info: MatchInfo): void {
     const before = this.match;
     this.match = info;
+    if (info.mode === 'defuse' && info.bomb?.round !== before.bomb?.round) {
+      this.pending = [];
+      this.outbox = [];
+      this.alive = false;
+      this.correction.set(0, 0, 0);
+    }
     if (Array.isArray(info.teams)) this.teamScores = info.teams;
     if (info.mode !== before.mode) {
       this.dropAllAvatars();
@@ -596,7 +611,11 @@ export class ClientGame {
     } else {
       if (this.podiumActive) this.exitPodium();
       const min = Math.round((info.endsAt - this.serverNow()) / 60000);
-      if (info.phase === 'live' && info.mode === 'tdm') {
+      if (info.phase === 'live' && info.mode === 'defuse') {
+        if (info.bomb?.phase === 'ended') this.hud.announce(info.bomb.reason, `${TEAMS[info.bomb.winner].name} venceram a rodada`, true);
+        else if (!before.bomb?.planted && info.bomb?.planted) this.hud.announce('bomba plantada', 'defensores: segurem E junto à bomba por 10 s', true);
+        else if (info.bomb?.round !== before.bomb?.round) this.hud.announce(`rodada ${info.bomb?.round ?? 1}`, this.myTeam === 0 ? 'atacantes · levem a bomba até A ou B' : 'defensores · protejam A e B');
+      } else if (info.phase === 'live' && info.mode === 'tdm') {
         const t = TEAMS[this.myTeam];
         this.hud.announce('team deathmatch', `${t ? `você é dos ${t.name}` : this.map.name} · ${info.limit ? `${info.limit} kills ou ` : ''}${min} min`);
       } else if (info.phase === 'live') this.hud.announce('todos contra todos', `${this.map.name} · ${min} min · mais kills vence`);
@@ -610,7 +629,7 @@ export class ClientGame {
 
   private enterPodium(info: MatchInfo): void {
     const results = info.results ?? [];
-    const tdm = info.mode === 'tdm';
+    const tdm = info.mode !== 'ffa';
     const winner = tdm ? (info.winner ?? -1) : -1;
     const featured = winner >= 0 ? results.filter((r) => r.team === winner) : results;
     const colorFor = (r: ResultRow) => (tdm && r.team >= 0 ? TEAMS[r.team].color : (PLAYER_COLORS[r.color] ?? '#f0f0f0'));
@@ -619,7 +638,7 @@ export class ClientGame {
     this.hud.setVisible(false);
     this.sfx.fanfare();
     this.sfx.setWind(0);
-    const next = info.next ? `${getMap(info.next.map).name} · ${info.next.mode === 'tdm' ? 'team deathmatch' : 'todos contra todos'}` : '';
+    const next = info.next ? `${getMap(info.next.map).name} · ${info.next.mode === 'defuse' ? 'defuse bomb' : info.next.mode === 'tdm' ? 'team deathmatch' : 'todos contra todos'}` : '';
     this.ui.showPodium({ mode: info.mode, featured, winner, teams: info.teams ?? [0, 0], myTeam: this.myTeam, colorFor }, next);
   }
 
@@ -681,7 +700,7 @@ export class ClientGame {
   private tick(): void {
     this.tickCount++;
     const renderTime = Math.max(0, this.serverNow() - INTERP_DELAY_MS);
-    const canPlay = this.alive && this.match.phase !== 'podium';
+    const canPlay = this.alive && this.match.phase !== 'podium' && this.match.bomb?.phase !== 'ended';
     const buttons = this.input.buttons();
     const req = this.resolveWeaponRequest(this.input.takeWeaponRequest());
     const cmd: Cmd = { seq: ++this.seq, buttons, yaw: this.input.yaw, pitch: this.input.pitch, weapon: req, interp: Math.round(renderTime) };
@@ -689,8 +708,11 @@ export class ClientGame {
       const s = this.me;
       const before = { ground: s.onGround, drop: s.dropping, reload: s.reload, weapon: s.weapon, nextFire: s.nextFire, vy: s.vy, zoom: s.zoom };
       this.prev.set(s.x, s.y, s.z);
-      const shot = applyCmd(this.collision, s, cmd, this.myId);
-      this.pending.push(cmd);
+      const predicted = this.match.mode === 'defuse' && (buttons & BTN.USE) !== 0
+        ? { ...cmd, buttons: buttons & ~(BTN.ATTACK | BTN.ATTACK2) }
+        : cmd;
+      const shot = applyCmd(this.collision, s, predicted, this.myId);
+      this.pending.push(predicted);
       if (this.pending.length > 180) this.pending.shift();
       if (shot) this.onLocalShot(shot);
       this.localSounds(before, cmd, shot);
@@ -888,6 +910,12 @@ export class ClientGame {
       hidden: !this.alive || zoomed || this.me.dropping,
     });
 
+    const bomb = this.match.bomb;
+    this.bombMesh.visible = !!bomb?.position && bomb.phase === 'playing' && (bomb.planted || this.myTeam === 0);
+    if (bomb?.position) {
+      this.bombMesh.position.set(bomb.position.x, bomb.position.y + 5, bomb.position.z);
+      this.bombMesh.material.emissiveIntensity = bomb.planted ? (Math.sin(this.elapsed * 12) > 0 ? 2 : 0.1) : 0.1;
+    }
     this.renderer.render(this.scene, this.camera);
     if (this.alive && !zoomed && !this.me.dropping) this.view.render(this.renderer);
 
@@ -996,11 +1024,13 @@ export class ClientGame {
     const def = weaponDef(s.weapon);
     const now = this.serverNow();
 
+    this.updateBombHud();
+
     // timer + leaders
     if (this.match.phase === 'live') {
       const left = Math.max(0, this.match.endsAt - now);
       const sec = Math.ceil(left / 1000);
-      hud.setTimer(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, `${this.map.name} · ${this.match.mode === 'tdm' ? 'tdm' : 'ffa'}`, sec <= 30);
+      hud.setTimer(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, `${this.map.name} · ${this.match.mode === 'defuse' ? `rodada ${this.match.bomb?.round ?? 1}${this.match.bomb?.planted ? ' · bomba' : ''}` : this.match.mode === 'tdm' ? 'tdm' : 'ffa'}`, sec <= 30);
       if (sec <= 10 && sec > 0 && sec !== this.lastBeep) {
         this.lastBeep = sec;
         this.sfx.beep(sec <= 3);
@@ -1011,16 +1041,17 @@ export class ClientGame {
     const leaders: LeaderRow[] = rows.slice(0, 3).map((r, i) => ({ name: r.name, color: r.color, kills: r.kills, rank: i + 1, me: r.me }));
     const myIdx = rows.findIndex((r) => r.me);
     const meRow = myIdx >= 0 ? { name: rows[myIdx].name, color: rows[myIdx].color, kills: rows[myIdx].kills, rank: myIdx + 1, me: true } : null;
-    const tdm = this.match.mode === 'tdm';
+    const tdm = this.match.mode !== 'ffa';
     if (tdm) hud.setTeams(this.teamScores, this.match.limit, this.myTeam);
     else hud.setLeaders(leaders, meRow);
     hud.setTeamBadge(tdm ? this.myTeam : -1);
-    const title = `${this.map.name} · ${tdm ? 'team deathmatch' : 'todos contra todos'} · ${rows.length} jogador${rows.length === 1 ? '' : 'es'}`;
+    const title = `${this.map.name} · ${this.match.mode === 'defuse' ? 'defuse bomb' : tdm ? 'team deathmatch' : 'todos contra todos'} · ${rows.length} jogador${rows.length === 1 ? '' : 'es'}`;
     hud.showScoreboard(this.scoreboardOpen, rows, title, tdm ? this.teamScores : null);
 
     if (!this.alive) {
       const left = Math.max(0, RESPAWN_TICKS * TICK_MS - (performance.now() - this.deathAt));
-      if (this.deathAt > 0) hud.setRespawn(left > 0 ? `voltando do céu em ${(left / 1000).toFixed(1)} s` : 'saltando…');
+      if (this.match.mode === 'defuse') hud.setRespawn('aguardando a próxima rodada');
+      else if (this.deathAt > 0) hud.setRespawn(left > 0 ? `voltando do céu em ${(left / 1000).toFixed(1)} s` : 'saltando…');
       hud.setCrosshair(0, 0, '', false);
       hud.setDrop(null);
       hud.setScope(false);
@@ -1067,12 +1098,52 @@ export class ClientGame {
     } else hud.setNetstat(null);
   }
 
+  private updateBombHud(): void {
+    if (this.match.mode !== 'defuse') {
+      this.hud.setObjective('', null);
+      return;
+    }
+    const bomb = this.match.bomb;
+    let text = 'Defuse Bomb · aguardando jogadores nos dois times';
+    let progress: number | null = null;
+    if (bomb?.phase === 'ended') text = `${bomb.reason} · ${TEAMS[bomb.winner].name} venceram`;
+    else if (bomb) {
+      const role = this.myTeam === 0 ? 'ATACANTE' : 'DEFENSOR';
+      if (!this.alive) text = `${role} · aguarde a próxima rodada`;
+      else if (bomb.action?.id === this.myId) {
+        text = bomb.action.kind === 'plant' ? 'Plantando · mantenha E pressionado e fique parado' : 'Desarmando · mantenha E pressionado e fique parado';
+        progress = clamp((this.serverNow() - bomb.action.startedAt) / (bomb.action.endsAt - bomb.action.startedAt), 0, 1);
+      } else if (bomb.planted) text = this.myTeam === 1 ? 'BOMBA PLANTADA · segure E perto da C4 por 10 s para desarmar' : 'BOMBA PLANTADA · impeça o desarme';
+      else if (bomb.carrier === this.myId) text = 'VOCÊ TEM A C4 · segure E parado em A ou B por 3 s para plantar';
+      else if (this.myTeam === 0) text = bomb.carrier ? `C4 com ${this.nameOf(bomb.carrier).name} · escoltem até A ou B` : 'C4 no chão · aproxime-se para pegar';
+      else text = 'DEFENSOR · proteja A e B · sem respawn até a próxima rodada';
+    }
+    this.hud.setObjective(text, progress);
+  }
+
   private markers(): Marker[] {
     const out: Marker[] = [];
     const w = this.renderer.domElement.clientWidth;
     const h = this.renderer.domElement.clientHeight;
-    for (const a of this.airdrops.values()) {
-      v3.set(a.x, a.group.position.y + 70, a.z);
+    const objectiveMarkers: { x: number; y: number; z: number; label: string }[] = [];
+    if (this.match.mode === 'defuse') {
+      for (const site of this.map.defuse?.sites ?? []) {
+        objectiveMarkers.push({
+          x: (site.min.x + site.max.x) / 2,
+          y: site.min.y + 25,
+          z: (site.min.z + site.max.z) / 2,
+          label: site.id,
+        });
+      }
+      const bomb = this.match.bomb;
+      if (bomb?.position && bomb.phase === 'playing' && (bomb.planted || this.myTeam === 0)) objectiveMarkers.push({ ...bomb.position, label: 'C4' });
+    }
+    const targets = [
+      ...[...this.airdrops.values()].map((a) => ({ x: a.x, y: a.group.position.y + 70, z: a.z, label: a.label })),
+      ...objectiveMarkers,
+    ];
+    for (const a of targets) {
+      v3.set(a.x, a.y, a.z);
       const dist = v3.distanceTo(this.camera.position);
       v3.project(this.camera);
       const behind = v3.z > 1;
@@ -1110,6 +1181,8 @@ export class ClientGame {
     if (document.pointerLockElement) document.exitPointerLock();
     this.input.dispose();
     this.sfx.dispose();
+    this.bombMesh.geometry.dispose();
+    this.bombMesh.material.dispose();
     this.world?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

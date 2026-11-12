@@ -2,6 +2,8 @@ import {
   AIRDROP_FALL_SPEED,
   AIRDROP_HALF,
   AIRDROP_PICKUP_RADIUS,
+  BTN,
+  type BombState,
   type Cmd,
   CollisionWorld,
   type GameEvent,
@@ -65,6 +67,10 @@ function rotationFor(setting: ModeSetting, maps: number): { map: number; mode: G
     { map: 1, mode: 'ffa' },
     { map: 0, mode: 'ffa' },
     { map: 1, mode: 'tdm' },
+    ...Array.from({ length: Math.max(0, maps - 2) }, (_, i) => [
+      { map: i + 2, mode: 'tdm' },
+      { map: i + 2, mode: 'ffa' },
+    ]).flat(),
   ].map((r) => ({ ...r, map: r.map % maps })) as { map: number; mode: GameMode }[];
 }
 
@@ -97,6 +103,8 @@ export interface ServerPlayer {
   joinedAt: number;
   ping: number;
   lastChat: number;
+  useRequested: boolean;
+  lastInputTick: number;
   history: HistoryEntry[];
   histHead: number;
   events: GameEvent[];
@@ -119,8 +127,10 @@ export interface GameOptions {
   podiumMs: number;
   warmupMinPlayers: number;
   modes?: ModeSetting;
+  defuseRoundsToWin?: number;
   tdmLimit?: number; // team kills to win a TDM match early (0 = timer only)
   airdropFirstMs?: number;
+  mapId?: string;
   random?: () => number;
 }
 
@@ -132,6 +142,8 @@ export class Game {
   map: MapDef;
   world: CollisionWorld;
   phase: MatchPhase = 'warmup';
+  bomb: BombState | undefined;
+  private bombActionOrigin: { x: number; y: number; z: number } | null = null;
   phaseEnds = 0;
   mode: GameMode = 'ffa';
   readonly teamScores = [0, 0];
@@ -152,7 +164,14 @@ export class Game {
   constructor(private readonly opts: GameOptions) {
     this.random = opts.random ?? Math.random;
     this.worlds = getMaps().map((m) => new CollisionWorld(m));
-    this.rotation = rotationFor(opts.modes ?? 'mixed', this.worlds.length);
+    const maps = getMaps();
+    const mapId = opts.modes === 'defuse' ? 'dust2' : opts.mapId;
+    if (opts.modes === 'defuse' && opts.mapId && opts.mapId !== 'dust2') throw new Error('Defuse requires GAME_MAP=dust2');
+    if (opts.modes === 'defuse' && opts.maxPlayers > 40) throw new Error('Defuse supports at most 40 fixed spawn slots');
+    const pinned = mapId ? maps.findIndex((map) => map.id === mapId) : -1;
+    if (opts.mapId && pinned < 0) throw new Error(`Unknown GAME_MAP: ${opts.mapId}`);
+    this.rotation = opts.modes === 'defuse' ? [{ map: pinned, mode: 'defuse' }] : rotationFor(opts.modes ?? 'mixed', this.worlds.length);
+    if (pinned >= 0) this.rotation = this.rotation.filter((entry) => entry.map === pinned);
     this.map = getMap(0);
     this.world = this.worlds[0];
     this.applyRotation();
@@ -195,7 +214,7 @@ export class Game {
       [list[i], list[j]] = [list[j], list[i]];
     }
     list.forEach((p, i) => {
-      p.team = this.mode === 'tdm' ? i % 2 : -1;
+      p.team = this.mode !== 'ffa' ? i % 2 : -1;
     });
   }
 
@@ -244,12 +263,14 @@ export class Game {
       joinedAt: this.tick,
       ping: 0,
       lastChat: -Infinity,
+      useRequested: false,
+      lastInputTick: -Infinity,
       history: [],
       histHead: 0,
       events: [],
       send,
     };
-    if (this.mode === 'tdm') p.team = this.pickTeam();
+    if (this.mode !== 'ffa') p.team = this.pickTeam();
     this.players.set(id, p);
     p.send(
       JSON.stringify({
@@ -264,13 +285,16 @@ export class Game {
     this.broadcastRoster();
     this.emit({ k: 'join', id });
     this.scoreDirty = true;
-    if (this.phase !== 'podium') this.spawn(p);
-    if (this.phase === 'warmup' && this.players.size >= this.opts.warmupMinPlayers) this.startMatch();
+    if (this.phase !== 'podium' && (this.mode !== 'defuse' || this.phase === 'warmup')) this.spawn(p);
+    if (this.phase === 'warmup' && this.readyToStart()) this.startMatch();
     return p;
   }
 
   leave(id: number): void {
-    if (!this.players.delete(id)) return;
+    const leaving = this.players.get(id);
+    if (!leaving) return;
+    this.dropBomb(leaving);
+    this.players.delete(id);
     this.emit({ k: 'leave', id });
     this.broadcastRoster();
     this.scoreDirty = true;
@@ -313,12 +337,13 @@ export class Game {
   private matchInfo(): MatchInfo {
     const podium = this.phase === 'podium';
     return {
+      bomb: this.bomb,
       phase: this.phase,
       mode: this.mode,
       map: this.mapIndex,
       endsAt: this.phaseEnds,
       teams: [...this.teamScores],
-      limit: this.mode === 'tdm' ? this.tdmLimit : 0,
+      limit: this.mode === 'defuse' ? (this.opts.defuseRoundsToWin ?? 8) : this.mode === 'tdm' ? this.tdmLimit : 0,
       results: podium ? this.results : undefined,
       winner: podium ? this.winner : undefined,
       next: podium ? this.rotation[(this.rotationIndex + 1) % this.rotation.length] : undefined,
@@ -352,8 +377,13 @@ export class Game {
     this.resetScores();
     this.balanceTeams();
     this.broadcastRoster();
-    for (const p of this.players.values()) this.spawn(p);
-    this.broadcastMatch();
+    if (this.mode === 'defuse') {
+      this.bomb = undefined;
+      this.startBombRound();
+    } else {
+      for (const p of this.players.values()) this.spawn(p);
+      this.broadcastMatch();
+    }
   }
 
   private endMatch(): void {
@@ -361,7 +391,7 @@ export class Game {
     this.phaseEnds = this.now() + this.opts.podiumMs;
     this.endPending = false;
     const [a, b] = this.teamScores;
-    this.winner = this.mode !== 'tdm' || a === b ? -1 : a > b ? 0 : 1;
+    this.winner = this.mode === 'ffa' || a === b ? -1 : a > b ? 0 : 1;
     this.results = [...this.players.values()]
       .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || b.headshots - a.headshots || a.joinedAt - b.joinedAt)
       .map((p) => ({
@@ -386,10 +416,11 @@ export class Game {
     this.rotationIndex++;
     this.applyRotation();
     for (const p of this.players.values()) this.clearHistory(p);
-    if (this.players.size >= this.opts.warmupMinPlayers) this.startMatch();
+    if (this.readyToStart()) this.startMatch();
     else {
       this.phase = 'warmup';
       this.phaseEnds = 0;
+      this.bomb = undefined;
       this.resetScores();
       this.balanceTeams();
       this.broadcastRoster();
@@ -401,6 +432,7 @@ export class Game {
   private resetToWarmup(): void {
     this.phase = 'warmup';
     this.phaseEnds = 0;
+    this.bomb = undefined;
     this.airdrops = [];
     this.results = [];
     this.teamScores[0] = 0;
@@ -411,6 +443,24 @@ export class Game {
   // ------------------------------------------------------------ spawning
 
   private spawn(p: ServerPlayer): void {
+    if (this.mode === 'defuse') {
+      const slots = this.map.defuse!.spawns[p.team];
+      const teammates = [...this.players.values()].filter((q) => q.team === p.team);
+      const slot = slots[teammates.indexOf(p) % slots.length];
+      spawnState(p.state, slot.x, slot.y, slot.z, slot.yaw, p.primaryChoice);
+      p.state.dropping = false;
+      p.state.onGround = true;
+      p.state.pitch = 0;
+      p.state.jumpHeld = false;
+      p.state.attackHeld = false;
+      p.state.attack2Held = false;
+      p.alive = true;
+      p.queue.length = 0;
+      p.useRequested = false;
+      p.lastInputTick = -Infinity;
+      this.clearHistory(p);
+      return;
+    }
     const a = this.map.dropArea;
     const tdm = this.mode === 'tdm';
     if (tdm) {
@@ -427,10 +477,12 @@ export class Game {
     // TDM: each side skydives in over its own half of the map (Bulldogs north, Martelos south)
     const minZ = tdm && p.team === 1 ? 150 : a.minZ;
     const maxZ = tdm && p.team === 0 ? -150 : a.maxZ;
+    const landingPoints = this.map.spawnPoints?.filter((point) => !tdm || (p.team === 0 ? point.z < -150 : point.z > 150));
     let best = { x: 0, z: 0, score: -1 };
     for (let i = 0; i < 12; i++) {
-      const x = a.minX + this.random() * (a.maxX - a.minX);
-      const z = minZ + this.random() * (maxZ - minZ);
+      const point = landingPoints?.length ? landingPoints[Math.floor(this.random() * landingPoints.length)] : null;
+      const x = point?.x ?? a.minX + this.random() * (a.maxX - a.minX);
+      const z = point?.z ?? minZ + this.random() * (maxZ - minZ);
       let nearest = 1e9;
       for (const q of this.players.values()) {
         if (q === p || !q.alive || (tdm && q.team === p.team)) continue;
@@ -504,7 +556,7 @@ export class Game {
     const targets: { q: ServerPlayer; x: number; y: number; z: number; ducked: boolean }[] = [];
     for (const q of this.players.values()) {
       if (q === p || !q.alive || q.state.dropping || q.state.protect > 0) continue;
-      if (this.mode === 'tdm' && q.team === p.team) continue; // no friendly fire: bullets pass through teammates
+      if (this.mode !== 'ffa' && q.team === p.team) continue; // no friendly fire: bullets pass through teammates
       const h = this.historyAt(q, t);
       if (h && !h.hittable) continue;
       targets.push(h ? { q, x: h.x, y: h.y, z: h.z, ducked: h.ducked } : { q, x: q.state.x, y: q.state.y, z: q.state.z, ducked: q.state.ducked });
@@ -543,6 +595,7 @@ export class Game {
 
   private damage(victim: ServerPlayer, attacker: ServerPlayer, dmg: number, head: boolean, zone: number, weapon: WeaponId): void {
     if (!victim.alive) return;
+    if (this.bomb?.action?.id === victim.id) this.bomb.action = null;
     const def = weaponDef(weapon);
     const s = victim.state;
     const { hp, armorLoss } = absorbArmor(dmg, s.armor, def.armorPen);
@@ -556,14 +609,15 @@ export class Game {
   }
 
   private kill(victim: ServerPlayer, killer: ServerPlayer, weapon: WeaponId, head: boolean): void {
+    this.dropBomb(victim);
     victim.alive = false;
     victim.deaths++;
     victim.streak = 0;
     victim.respawnAt = this.tick + RESPAWN_TICKS;
     victim.state.health = 0;
     victim.queue.length = 0;
-    killer.kills++;
-    killer.streak++;
+    if (killer !== victim) killer.kills++;
+    if (killer !== victim) killer.streak++;
     killer.bestStreak = Math.max(killer.bestStreak, killer.streak);
     if (head) killer.headshots++;
     if (this.mode === 'tdm' && killer !== victim && killer.team >= 0 && killer.team !== victim.team) {
@@ -623,6 +677,158 @@ export class Game {
     }
   }
 
+  // ------------------------------------------------------------ bomb defusal
+
+  private readyToStart(): boolean {
+    return this.players.size >= this.opts.warmupMinPlayers &&
+      (this.mode !== 'defuse' || (this.teamSize(0) > 0 && this.teamSize(1) > 0));
+  }
+
+  private startBombRound(): void {
+    const round = (this.bomb?.round ?? 0) + 1;
+    this.phaseEnds = this.now() + 120_000;
+    for (const p of this.players.values()) this.spawn(p);
+    const carrier = [...this.players.values()].find((p) => p.team === 0);
+    this.bomb = {
+      round,
+      phase: 'playing',
+      carrier: carrier?.id ?? null,
+      position: null,
+      planted: false,
+      explodesAt: 0,
+      winner: -1,
+      reason: '',
+      action: null,
+    };
+    this.bombActionOrigin = null;
+    this.broadcastMatch();
+  }
+
+  private dropBomb(p: ServerPlayer): void {
+    const bomb = this.bomb;
+    if (!bomb || bomb.phase !== 'playing') return;
+    if (bomb.action?.id === p.id) bomb.action = null;
+    if (bomb.carrier !== p.id) return;
+    bomb.carrier = null;
+    const floor = this.world.groundBelow(p.state.x, p.state.y + 4, p.state.z, 0);
+    const bounds = this.map.bounds;
+    const reachable = Number.isFinite(floor) && floor >= 0 &&
+      p.state.x > bounds.minX && p.state.x < bounds.maxX &&
+      p.state.z > bounds.minZ && p.state.z < bounds.maxZ;
+    const fallback = this.map.defuse!.spawns[0][0];
+    bomb.position = reachable
+      ? { x: p.state.x, y: floor, z: p.state.z }
+      : { x: fallback.x, y: fallback.y, z: fallback.z };
+  }
+
+  private finishBombRound(winner: number, reason: string): void {
+    if (!this.bomb || this.bomb.phase !== 'playing') return;
+    this.bomb.phase = 'ended';
+    this.bomb.winner = winner;
+    this.bomb.reason = reason;
+    this.bomb.action = null;
+    this.teamScores[winner]++;
+    this.scoreDirty = true;
+    if (this.teamScores[winner] >= (this.opts.defuseRoundsToWin ?? 8)) {
+      this.endMatch();
+      return;
+    }
+    this.phaseEnds = this.now() + 5000;
+    for (const p of this.players.values()) p.queue.length = 0;
+    this.broadcastMatch();
+  }
+
+  private bombSite(p: ServerPlayer): string | undefined {
+    const s = p.state;
+    return this.map.defuse?.sites.find((site) =>
+      s.x >= site.min.x && s.x <= site.max.x &&
+      s.z >= site.min.z && s.z <= site.max.z &&
+      s.y >= site.min.y - 2 && s.y <= site.max.y,
+    )?.id;
+  }
+
+  private nearBomb(p: ServerPlayer): boolean {
+    const position = this.bomb?.position;
+    if (!position) return false;
+    const s = p.state;
+    const dx = position.x - s.x;
+    const dy = position.y + 8 - (s.y + 36);
+    const dz = position.z - s.z;
+    const length = Math.hypot(dx, dy, dz);
+    return length <= 80 && (length < 2 || !this.world.trace(s.x, s.y + 36, s.z, dx / length, dy / length, dz / length, length - 2));
+  }
+
+  private canUseBomb(p: ServerPlayer): boolean {
+    if (!p.alive || !p.useRequested || this.tick - p.lastInputTick > 15) return false;
+    const s = p.state;
+    if (s.dropping || !s.onGround || Math.hypot(s.vx, s.vz) > 20) return false;
+    return this.bomb!.planted
+      ? p.team === 1 && this.nearBomb(p)
+      : p.team === 0 && this.bomb!.carrier === p.id && this.bombSite(p) !== undefined;
+  }
+
+  private updateBombRound(): void {
+    const bomb = this.bomb;
+    if (!bomb) return;
+    const now = this.now();
+    if (bomb.phase === 'ended') {
+      if (now >= this.phaseEnds) {
+        if (this.readyToStart()) this.startBombRound();
+        else {
+          this.resetToWarmup();
+          for (const p of this.players.values()) this.spawn(p);
+          this.broadcastMatch();
+        }
+      }
+      return;
+    }
+    // Deadlines use server ticks, never the number of client commands.
+    if (bomb.planted && now >= bomb.explodesAt) return this.finishBombRound(0, 'bomba explodiu');
+    if (!bomb.planted && now >= this.phaseEnds) return this.finishBombRound(1, 'tempo esgotado');
+    const alive = [0, 0];
+    for (const p of this.players.values()) if (p.alive && p.team >= 0) alive[p.team]++;
+    if (alive[1] === 0) return this.finishBombRound(0, 'defensores eliminados');
+    if (alive[0] === 0 && !bomb.planted) return this.finishBombRound(1, 'atacantes eliminados');
+
+    if (!bomb.planted && bomb.carrier === null && bomb.position) {
+      const pickup = [...this.players.values()].find((p) => p.alive && p.team === 0 && this.nearBomb(p));
+      if (pickup) {
+        bomb.carrier = pickup.id;
+        bomb.position = null;
+      }
+    }
+    if (bomb.action) {
+      const actor = this.players.get(bomb.action.id);
+      const origin = this.bombActionOrigin;
+      if (!actor || !this.canUseBomb(actor) || !origin || Math.hypot(actor.state.x - origin.x, actor.state.y - origin.y, actor.state.z - origin.z) > 8) {
+        bomb.action = null;
+      }
+    }
+    if (!bomb.action) {
+      const actor = [...this.players.values()].find((p) => this.canUseBomb(p));
+      if (actor) {
+        bomb.action = {
+          id: actor.id,
+          kind: bomb.planted ? 'defuse' : 'plant',
+          startedAt: now,
+          endsAt: now + (bomb.planted ? 10_000 : 3000),
+        };
+        this.bombActionOrigin = { x: actor.state.x, y: actor.state.y, z: actor.state.z };
+      }
+    }
+    if (bomb.action && now >= bomb.action.endsAt) {
+      if (bomb.action.kind === 'defuse') return this.finishBombRound(1, 'bomba desarmada');
+      const actor = this.players.get(bomb.action.id)!;
+      bomb.position = { x: actor.state.x, y: actor.state.y, z: actor.state.z };
+      bomb.carrier = null;
+      bomb.planted = true;
+      bomb.explodesAt = now + 40_000;
+      bomb.action = null;
+      this.phaseEnds = bomb.explodesAt;
+      this.broadcastMatch();
+    }
+  }
+
   // ------------------------------------------------------------ main tick
 
   update(): void {
@@ -630,7 +836,7 @@ export class Game {
     const now = this.now();
 
     // phase transitions
-    if (this.phase === 'live' && (now >= this.phaseEnds || this.endPending)) this.endMatch();
+    if (this.phase === 'live' && this.mode !== 'defuse' && (now >= this.phaseEnds || this.endPending)) this.endMatch();
     else if (this.phase === 'podium' && now >= this.phaseEnds) this.nextMap();
 
     // commands
@@ -642,8 +848,14 @@ export class Game {
         p.tokens -= 1;
         n++;
         p.lastSeq = cmd.seq;
-        if (p.alive && this.phase !== 'podium') {
-          const shot = applyCmd(this.world, p.state, cmd, p.id);
+        if (p.alive && this.phase !== 'podium' && this.bomb?.phase !== 'ended') {
+          p.lastInputTick = this.tick;
+          p.useRequested = (cmd.buttons & BTN.USE) !== 0 &&
+            (cmd.buttons & (BTN.FWD | BTN.BACK | BTN.LEFT | BTN.RIGHT | BTN.JUMP)) === 0;
+          const applied = this.mode === 'defuse' && (cmd.buttons & BTN.USE) !== 0
+            ? { ...cmd, buttons: cmd.buttons & ~(BTN.ATTACK | BTN.ATTACK2) }
+            : cmd;
+          const shot = applyCmd(this.world, p.state, applied, p.id);
           if (shot) this.handleShot(p, shot, cmd.interp);
           this.keepInBounds(p);
         } else {
@@ -654,13 +866,14 @@ export class Game {
     }
 
     // respawns
-    if (this.phase !== 'podium') {
+    if (this.phase !== 'podium' && this.mode !== 'defuse') {
       for (const p of this.players.values()) {
         if (!p.alive && this.tick >= p.respawnAt) this.spawn(p);
       }
       this.updateAirdrops();
     }
 
+    if (this.mode === 'defuse' && this.phase === 'live') this.updateBombRound();
     this.recordHistory();
     this.flushEvents();
     if (this.tick % SNAPSHOT_EVERY_TICKS === 0) this.sendSnapshots();
@@ -671,7 +884,10 @@ export class Game {
   private keepInBounds(p: ServerPlayer): void {
     const s = p.state;
     const b = this.map.bounds;
-    if (s.y < -200 || s.x < b.minX - 64 || s.x > b.maxX + 64 || s.z < b.minZ - 64 || s.z > b.maxZ + 64) this.spawn(p);
+    if (s.y < -200 || s.x < b.minX - 64 || s.x > b.maxX + 64 || s.z < b.minZ - 64 || s.z > b.maxZ + 64) {
+      if (this.mode === 'defuse') this.kill(p, p, WEAPON.HAMMER, false);
+      else this.spawn(p);
+    }
   }
 
   // ------------------------------------------------------------ networking
@@ -710,11 +926,11 @@ export class Game {
       ps.push([p.id, round(s.x, 10), round(s.y, 10), round(s.z, 10), round(s.yaw, 1000), round(s.pitch, 1000), flags, s.weapon]);
     }
     const ad = this.airdrops.map((d) => [d.id, d.x, round(d.y, 10), d.z, d.w, d.landed ? 1 : 0]);
-    const shared = `,"ps":${JSON.stringify(ps)},"ad":${JSON.stringify(ad)}}`;
+    const shared = `,"bomb":${JSON.stringify(this.bomb ?? null)},"ps":${JSON.stringify(ps)},"ad":${JSON.stringify(ad)}}`;
     const time = this.now();
     for (const p of this.players.values()) {
       const me = p.alive && this.phase !== 'podium' ? JSON.stringify(packState(p.state)) : 'null';
-      p.send(`{"t":"snap","time":${time},"ack":${p.lastSeq},"me":${me}${shared}`);
+      p.send(`{"t":"snap","time":${time},"ack":${p.lastSeq},"look":[${p.state.yaw},${p.state.pitch}],"me":${me}${shared}`);
     }
   }
 
@@ -745,7 +961,7 @@ export class Game {
       maxPlayers: this.opts.maxPlayers,
       map: this.map.name,
       mode: this.mode,
-      teams: this.mode === 'tdm' ? this.teamScores : null,
+      teams: this.mode !== 'ffa' ? this.teamScores : null,
       phase: this.phase,
       endsInMs: this.phase === 'warmup' ? null : Math.max(0, this.phaseEnds - this.now()),
       leaders,

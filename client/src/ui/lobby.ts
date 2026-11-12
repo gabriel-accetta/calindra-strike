@@ -11,7 +11,7 @@ interface Status {
   endsInMs: number | null;
   leaders: { name: string; kills: number }[];
   codeRequired: boolean;
-  mode?: 'ffa' | 'tdm';
+  mode?: 'ffa' | 'tdm' | 'defuse';
   teams?: number[] | null;
 }
 
@@ -114,6 +114,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
   const err = h('p', { class: 'form-error', role: 'alert', text: error });
   const play = h('button', { class: 'btn btn-primary play', type: 'submit', text: 'jogar agora' });
 
+  const footnote = h('p', { class: 'footnote', text: 'Partidas de 5 min · quem fizer mais kills sobe no pódio' });
   const form = h('form', { class: 'card', novalidate: true }, [
     server,
     h('div', { class: 'field' }, [h('label', { class: 'label', for: 'nick', text: 'apelido' }), nameInput]),
@@ -124,7 +125,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
     err,
     leaders,
     h('p', { class: 'mobile-note', text: 'Calindra Strike precisa de mouse e teclado. Abra no computador.' }),
-    h('p', { class: 'footnote', text: 'Partidas de 5 min · quem fizer mais kills sobe no pódio' }),
+    footnote,
   ]);
 
   form.addEventListener('submit', (e) => {
@@ -209,7 +210,10 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       leaders.replaceChildren();
       return;
     }
-    const mode = status.mode === 'tdm' ? `team deathmatch${status.teams ? ` ${status.teams[0]}×${status.teams[1]}` : ''}` : 'todos contra todos';
+    footnote.textContent = status.mode === 'defuse'
+      ? 'Rodadas sem respawn · spawns fixos · E para plantar ou desarmar'
+      : 'Partidas de 5 min · quem fizer mais kills sobe no pódio';
+    const mode = status.mode === 'defuse' ? 'defuse bomb · spawns fixos' : status.mode === 'tdm' ? `team deathmatch${status.teams ? ` ${status.teams[0]}×${status.teams[1]}` : ''}` : 'todos contra todos';
     const phase =
       status.phase === 'live' && status.endsInMs !== null
         ? `${status.map} · ${mode} · ${fmt(status.endsInMs)}`

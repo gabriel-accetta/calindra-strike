@@ -137,3 +137,19 @@ describe('Team Deathmatch', () => {
     expect(players.every((p) => p.team === -1)).toBe(true);
   });
 });
+
+describe('Dust2 selection', () => {
+  it('pins Dust2 in both modes across match transitions', () => {
+    const game = new Game({ maxPlayers: 2, matchMs: 1000, podiumMs: 1000, warmupMinPlayers: 1, mapId: 'dust2' });
+    game.join('Dust2 tester', 0, WEAPON.RIFLE, () => {});
+    expect(game.map.id).toBe('dust2');
+    expect(game.mode).toBe('tdm');
+    for (let i = 0; i < 121; i++) game.update();
+    expect(game.map.id).toBe('dust2');
+    expect(game.mode).toBe('ffa');
+  });
+
+  it('rejects unknown map IDs', () => {
+    expect(() => new Game({ maxPlayers: 2, matchMs: 1000, podiumMs: 1000, warmupMinPlayers: 1, mapId: 'missing' })).toThrow('Unknown GAME_MAP');
+  });
+});

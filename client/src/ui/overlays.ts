@@ -34,7 +34,7 @@ export class Overlays {
       h('div', { class: 'click-to-play' }, [
         gameLogo('game-logo cta-logo'),
         h('h2', { class: 'wordmark', text: 'pronto?' }),
-        h('p', { text: 'Você vai cair do céu. Planeje com WASD e escolha onde pousar.' }),
+        h('p', { text: 'WASD para mover · E para plantar ou desarmar no modo Defuse Bomb.' }),
         play,
         h('p', { class: 'label', text: 'esc solta o mouse · tab mostra o placar' }),
       ]),
@@ -95,7 +95,7 @@ export class Overlays {
         () => s.primary,
         (v) => (s.primary = v),
       ),
-      h('p', { class: 'label', style: 'margin:-4px 0 10px 162px', text: 'vale a partir do próximo salto' }),
+      h('p', { class: 'label', style: 'margin:-4px 0 10px 162px', text: 'vale a partir do próximo spawn' }),
       slider('sensibilidade', 0.3, 8, 0.05, () => s.sensitivity, (v) => (s.sensitivity = v), (v) => v.toFixed(2)),
       slider('volume', 0, 1, 0.05, () => s.volume, (v) => (s.volume = v), (v) => `${Math.round(v * 100)}%`),
       slider('campo de visão', 75, 110, 1, () => s.fov, (v) => (s.fov = v), (v) => `${v}°`),
@@ -166,7 +166,7 @@ export class Overlays {
     if (!data) return;
     this.nextMap = next;
     this.lastSeconds = -1;
-    const tdm = data.mode === 'tdm';
+    const tdm = data.mode !== 'ffa';
     this.podiumScore.classList.toggle('hidden', !tdm);
     if (tdm) {
       const w = data.winner;

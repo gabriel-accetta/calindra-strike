@@ -96,7 +96,7 @@ export function encodeCmd(c: Cmd): number[] {
 // ------------------------------------------------------------ server -> client
 
 export type MatchPhase = 'warmup' | 'live' | 'podium';
-export type GameMode = 'ffa' | 'tdm';
+export type GameMode = 'ffa' | 'tdm' | 'defuse';
 
 export interface ResultRow {
   id: number;
@@ -109,7 +109,20 @@ export interface ResultRow {
   team: number; // -1 in free-for-all
 }
 
+export interface BombState {
+  round: number;
+  phase: 'playing' | 'ended';
+  carrier: number | null;
+  position: { x: number; y: number; z: number } | null;
+  planted: boolean;
+  explodesAt: number;
+  winner: number;
+  reason: string;
+  action: { id: number; kind: 'plant' | 'defuse'; startedAt: number; endsAt: number } | null;
+}
+
 export interface MatchInfo {
+  bomb?: BombState;
   phase: MatchPhase;
   mode: GameMode;
   map: number;
@@ -134,7 +147,7 @@ export type GameEvent =
 export type ServerMsg =
   | { t: 'welcome'; id: number; time: number; roster: RosterEntry[]; match: MatchInfo; maxPlayers: number }
   | { t: 'reject'; reason: string }
-  | { t: 'snap'; time: number; ack: number; me: number[] | null; ps: number[][]; ad: number[][] }
+  | { t: 'snap'; bomb?: BombState | null; look?: number[]; time: number; ack: number; me: number[] | null; ps: number[][]; ad: number[][] }
   | { t: 'ev'; e: GameEvent[] }
   | { t: 'roster'; roster: RosterEntry[] }
   | { t: 'score'; s: number[][]; ts: number[] }

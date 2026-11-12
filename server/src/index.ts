@@ -10,11 +10,13 @@ import { KeyedLimiter, TokenBucket } from './ratelimit.ts';
 const cfg = loadConfig();
 const game = new Game({
   maxPlayers: cfg.maxPlayers,
+  mapId: cfg.mapId,
   matchMs: cfg.matchMs,
   podiumMs: cfg.podiumMs,
   warmupMinPlayers: cfg.warmupMinPlayers,
   modes: cfg.modes,
   tdmLimit: cfg.tdmLimit,
+  defuseRoundsToWin: cfg.defuseRoundsToWin,
   airdropFirstMs: cfg.airdropFirstMs,
 });
 

@@ -1,3 +1,4 @@
+import { brushOverlaps, clipBrush } from './brush.ts';
 import { PLAYER_RADIUS } from './constants.ts';
 import { rayAabb } from './math.ts';
 import type { MapDef } from './maps/types.ts';
@@ -37,7 +38,7 @@ export class CollisionWorld {
         return true;
       }
     }
-    return false;
+    return (this.map.brushes ?? []).some((b) => b.solid && brushOverlaps(b, [minX, minY, minZ], [maxX, maxY, maxZ]));
   }
 
   hullOverlaps(x: number, y: number, z: number, height: number): boolean {
@@ -94,6 +95,15 @@ export class CollisionWorld {
         if (limit < allowed) allowed = limit < 0 ? 0 : limit;
       } else if (limit > allowed) allowed = limit > 0 ? 0 : limit;
     }
+    for (const b of this.map.brushes ?? []) {
+      if (!b.solid || maxX <= b.min.x || minX >= b.max.x || maxY <= b.min.y || minY >= b.max.y || maxZ <= b.min.z || minZ >= b.max.z) continue;
+      const movement = [0, 0, 0];
+      movement[axis] = delta;
+      const hit = clipBrush(b, [x, y + height / 2, z], movement, [r, height / 2, r]);
+      if (!hit || hit.inside || hit.exit <= 0 || hit.enter < 0) continue;
+      const limit = Math.sign(delta) * Math.max(0, Math.abs(delta) * hit.enter - EPS);
+      allowed = delta > 0 ? Math.min(allowed, limit) : Math.max(allowed, limit);
+    }
     return allowed;
   }
 
@@ -109,6 +119,15 @@ export class CollisionWorld {
         bi = i;
       }
     }
+    let brushHit: TraceHit | null = null;
+    for (const b of this.map.brushes ?? []) {
+      if (!b.solid || rayAabb(ox, oy, oz, dx, dy, dz, b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z, best) < 0) continue;
+      const hit = clipBrush(b, [ox, oy, oz], [dx * best, dy * best, dz * best]);
+      if (!hit || hit.inside || hit.enter * best >= best) continue;
+      best *= hit.enter;
+      brushHit = { t: best, nx: hit.normal[0], ny: hit.normal[1], nz: hit.normal[2] };
+    }
+    if (brushHit) return brushHit;
     if (bi < 0) return null;
     const hx = ox + dx * best;
     const hy = oy + dy * best;
@@ -136,6 +155,12 @@ export class CollisionWorld {
         const top = s[i + 4];
         if (top <= y + 0.001 && top > best) best = top;
       }
+    }
+    for (const b of this.map.brushes ?? []) {
+      if (!b.solid || x + halfSize <= b.min.x || x - halfSize >= b.max.x || z + halfSize <= b.min.z || z - halfSize >= b.max.z) continue;
+      const length = Math.max(1, y - b.min.y + 1);
+      const hit = clipBrush(b, [x, y, z], [0, -length, 0], [halfSize, 0, halfSize]);
+      if (hit && !hit.inside && hit.normal[1] > 0) best = Math.max(best, y - hit.enter * length);
     }
     return best;
   }
