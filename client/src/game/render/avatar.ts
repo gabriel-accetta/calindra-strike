@@ -228,7 +228,10 @@ export class Avatar {
 
     const ghost = p.protect && Math.floor(performance.now() / 120) % 2 === 0;
     for (const m of this.materials) {
-      m.transparent = p.protect;
+      if (m.transparent !== p.protect) {
+        m.transparent = p.protect;
+        m.needsUpdate = true;
+      }
       m.opacity = ghost ? 0.35 : p.protect ? 0.7 : 1;
     }
   }

@@ -180,6 +180,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
   if (!settings.name) nameInput.focus();
 
   const poll = async () => {
+    if (document.hidden) return;
     try {
       const ctrl = new AbortController();
       const to = setTimeout(() => ctrl.abort(), 4000);

@@ -7,5 +7,6 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: false,
     chunkSizeWarningLimit: 900,
+    assetsInlineLimit: 0, // keep fonts as files: the CSP disallows data: fonts
   },
 });

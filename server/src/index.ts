@@ -21,8 +21,9 @@ const SEND_BUFFER_HARD = 2 * 1024 * 1024; // terminate hopelessly slow clients
 
 let connections = 0;
 const perIp = new Map<string, number>();
-const connectLimiter = new KeyedLimiter(1, 12); // per IP: burst 12, then 1 new socket/s
-const statusLimiter = new KeyedLimiter(2, 20);
+// Office players share one NAT IP, so per-IP limits must fit a whole team joining at once.
+const connectLimiter = new KeyedLimiter(3, 40);
+const statusLimiter = new KeyedLimiter(15, 90);
 
 const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a);
 
