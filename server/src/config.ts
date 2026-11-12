@@ -29,6 +29,7 @@ function int(name: string, def: number, lo: number, hi: number): number {
 }
 
 const ALL_MODES: GameMode[] = ['tdm', 'ffa', 'defuse'];
+const DEFAULT_MODES: GameMode[] = ['tdm', 'ffa'];
 
 function list(raw: string | undefined): string[] {
   return (raw ?? '')
@@ -39,13 +40,13 @@ function list(raw: string | undefined): string[] {
 
 /**
  * GAME_MODES picks any set of modes (e.g. "tdm,defuse"). The older single GAME_MODE
- * still works: "mixed" = TDM + FFA, or one mode. Default: every mode.
+ * still works: "mixed" = TDM + FFA, or one mode. Default: TDM + FFA.
  */
 export function modeList(modesRaw: string | undefined, legacyRaw: string | undefined): GameMode[] {
   const items = list(modesRaw);
   if (items.length === 0) {
     const legacy = (legacyRaw ?? '').trim().toLowerCase();
-    if (!legacy) return [...ALL_MODES];
+    if (!legacy) return [...DEFAULT_MODES];
     if (legacy === 'mixed') return ['tdm', 'ffa'];
     items.push(legacy);
   }

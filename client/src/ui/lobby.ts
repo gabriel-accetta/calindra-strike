@@ -152,6 +152,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
   });
 
   const key = (k: string, label: string) => h('div', {}, [h('span', { class: 'kbd', text: k }), label]);
+  const modeChipText = h('span', { text: 'TDM · todos contra todos' });
   const hero = h('section', { class: 'hero' }, [
     h('div', { class: 'top' }, [
       gameLogo('game-logo hero-logo'),
@@ -169,7 +170,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       ' com o time.',
     ]),
     h('div', { class: 'features' }, [
-      h('span', { class: 'chip' }, [h('i'), 'TDM · todos contra todos · defuse bomb']),
+      h('span', { class: 'chip' }, [h('i'), modeChipText]),
       h('span', { class: 'chip' }, [h('i'), 'AWP no airdrop']),
       h('span', { class: 'chip' }, [h('i'), 'Pódio dos 3 melhores']),
       h('span', { class: 'chip' }, [h('i'), 'Bunny hop liberado']),
@@ -180,7 +181,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       key('Ctrl', 'agachar / mergulhar'),
       key('Shift', 'andar em silêncio'),
       key('1 2 3', 'armas · Q última'),
-      key('R', 'recarregar · E plantar/desarmar'),
+      key('R', 'recarregar'),
       key('Mouse 2', 'luneta da AWP'),
       key('Tab', 'placar · Y chat'),
     ]),
@@ -212,6 +213,8 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
       leaders.replaceChildren();
       return;
     }
+    const enabledModes: GameMode[] = status.modes?.length ? status.modes : ['tdm', 'ffa'];
+    modeChipText.textContent = enabledModes.map((mode) => MODE_LABEL[mode]).join(' · ');
     footnote.textContent =
       status.mode === 'defuse'
         ? 'Rodadas sem respawn · plante ou desarme a C4 com E'

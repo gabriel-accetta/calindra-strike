@@ -38,7 +38,7 @@ export class Overlays {
       h('div', { class: 'click-to-play' }, [
         gameLogo('game-logo cta-logo'),
         h('h2', { class: 'wordmark', text: 'pronto?' }),
-        h('p', { text: 'Planeje a queda com WASD. No defuse bomb, E planta ou desarma a C4.' }),
+        h('p', { text: 'Planeje a queda com WASD e dispute o pódio com mais kills.' }),
         play,
         h('p', { class: 'label', text: 'esc solta o mouse · tab mostra o placar' }),
       ]),
