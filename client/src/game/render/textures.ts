@@ -55,10 +55,42 @@ function blotches(g: CanvasRenderingContext2D, s: number, n: number, alpha: numb
   }
 }
 
-/** Official Eitri app icon (black squircle + lime pinwheel), centred at (cx, cy). */
-export function drawEitri(g: CanvasRenderingContext2D, cx: number, cy: number, size: number): void {
-  const img = brandImage('eitri');
-  if (img) g.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+/**
+ * Official Eitri mark on a transparent background.
+ * `dark` swaps to dark ink (lime surfaces), `halo` adds a soft shadow so it reads on light walls,
+ * `tile` puts it on the same glowing dark tile used for the bulldog.
+ */
+export function drawEitri(
+  g: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+  opts: { dark?: boolean; halo?: boolean; tile?: boolean } = {},
+): void {
+  if (opts.tile) {
+    g.save();
+    g.shadowColor = 'rgba(152,252,3,0.6)';
+    g.shadowBlur = size * 0.25;
+    g.fillStyle = '#131312';
+    g.beginPath();
+    g.roundRect(cx - size / 2, cy - size / 2, size, size, size * 0.24);
+    g.fill();
+    g.restore();
+    g.strokeStyle = 'rgba(152,252,3,0.55)';
+    g.lineWidth = Math.max(2, size * 0.012);
+    g.stroke();
+    size *= 0.7;
+  }
+  const img = brandImage(opts.dark ? 'eitriDark' : 'eitri');
+  if (!img) return;
+  g.save();
+  if (opts.halo) {
+    g.shadowColor = 'rgba(10,12,6,0.75)';
+    g.shadowBlur = size * 0.06;
+    g.shadowOffsetY = size * 0.012;
+  }
+  g.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+  g.restore();
 }
 
 /** Calindra Strike bulldog (lime line art), optionally on a dark glowing tile. */
@@ -170,7 +202,7 @@ export const TEX: Record<string, () => THREE.CanvasTexture> = {
         g.fillText('calindra', 70, h / 2 - 20);
         g.font = '500 30px "Fragment Mono", monospace';
         g.fillText('STRIKE // FORJA-07', 74, h / 2 + 38);
-        drawEitri(g, w - 120, h / 2, 190);
+        drawEitri(g, w - 124, h / 2, 230, { dark: true });
         g.fillStyle = 'rgba(17,32,0,0.6)';
         g.fillRect(0, 0, w, 14);
         g.fillRect(0, h - 14, w, 14);
@@ -204,7 +236,9 @@ export const TEX: Record<string, () => THREE.CanvasTexture> = {
         g.strokeStyle = 'rgba(255,255,255,0.08)';
         g.lineWidth = 2;
         g.strokeRect(2, 2, s - 4, s - 4);
-        drawEitri(g, s * 0.72, s * 0.28, 74);
+        g.globalAlpha = 0.92; // stencilled paint on the planks
+        drawEitri(g, s * 0.72, s * 0.28, 86);
+        g.globalAlpha = 1;
       },
       false,
     ),
@@ -327,7 +361,7 @@ export const TEX: Record<string, () => THREE.CanvasTexture> = {
       512,
       (g, s) => {
         g.clearRect(0, 0, s, s);
-        drawEitri(g, s / 2, s / 2, s);
+        drawEitri(g, s / 2, s / 2, s * 0.86, { halo: true });
       },
       false,
     ),

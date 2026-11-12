@@ -57,7 +57,7 @@ function wallTexture(): THREE.CanvasTexture {
       g.fillRect(0, 0, w, h);
       // brand tiles either side of the winner: Calindra Strike × Eitri
       drawBulldog(g, w * 0.3, h * 0.68, 210, true);
-      drawEitri(g, w * 0.7, h * 0.68, 210);
+      drawEitri(g, w * 0.7, h * 0.68, 210, { tile: true });
     },
     false,
     2048,

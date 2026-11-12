@@ -23,7 +23,7 @@ function crateTexture(): THREE.CanvasTexture {
     g.lineTo(i + 256, 0);
     g.fill();
   }
-  drawEitri(g, 128, 128, 150);
+  drawEitri(g, 128, 128, 170);
   crateTex = new THREE.CanvasTexture(c);
   crateTex.colorSpace = THREE.SRGBColorSpace;
   return crateTex;
@@ -87,10 +87,11 @@ export class AirdropView {
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
-        uniforms: { time: { value: 0 } },
+        uniforms: { time: { value: 0 }, near: { value: 1 } },
         vertexShader: 'varying float vY; void main(){ vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
         fragmentShader:
-          'uniform float time; varying float vY; void main(){ float a = (1.0 - vY / 2400.0); a = a * a * (0.55 + 0.15 * sin(time * 4.0 - vY * 0.01)); gl_FragColor = vec4(0.65, 0.98, 0.0, a * 0.7); }',
+          // fades in above the crate (so the crate stays readable up close) and out toward the sky
+          'uniform float time; uniform float near; varying float vY; void main(){ float a = (1.0 - vY / 2400.0); a = a * a * (0.55 + 0.15 * sin(time * 4.0 - vY * 0.01)); a *= smoothstep(30.0, 220.0, vY); gl_FragColor = vec4(0.65, 0.98, 0.0, a * 0.7 * near); }',
       }),
     );
     this.beam.frustumCulled = false;
@@ -108,8 +109,13 @@ export class AirdropView {
     this.landed = landed;
   }
 
-  update(dt: number, t: number): void {
+  update(dt: number, t: number, camera?: THREE.Vector3): void {
     const p = this.group.position;
+    if (camera) {
+      // soften the beam when you are standing next to it
+      const d = Math.hypot(camera.x - this.x, camera.z - this.z);
+      (this.beam.material as THREE.ShaderMaterial).uniforms.near.value = THREE.MathUtils.clamp((d - 60) / 500, 0.18, 1);
+    }
     p.y += (this.y - p.y) * Math.min(1, dt * 10);
     this.chute.visible = !this.landed;
     this.chute.rotation.y += dt * 0.4;

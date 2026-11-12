@@ -1,7 +1,9 @@
 /**
  * Dev-only load/behaviour test: spawns simple bots that strafe around and shoot
  * at the nearest player. Usage:
- *   npx tsx tools/bots.ts [count=3] [ws://127.0.0.1:7350/ws] [origin=http://localhost:5173]
+ *   npx tsx tools/bots.ts [count=3] [ws://127.0.0.1:7350/ws] [origin=http://localhost:5173] [passive]
+ * `passive` bots walk up to the nearest player and strafe in front of them without shooting
+ * (handy for screenshots and for testing hit registration).
  */
 import { BTN, PROTOCOL_VERSION, TICK_MS, WEAPON, encodeCmd } from '@calindra-strike/shared';
 import WebSocket from 'ws';
@@ -9,6 +11,7 @@ import WebSocket from 'ws';
 const count = Number(process.argv[2] ?? 3);
 const url = process.argv[3] ?? 'ws://127.0.0.1:7350/ws';
 const origin = process.argv[4] ?? 'http://localhost:5173';
+const passive = process.argv[5] === 'passive';
 const NAMES = ['Brokkr', 'Sindri', 'Freya', 'Loki', 'Tyr', 'Skadi', 'Odin', 'Heimdall'];
 
 function bot(i: number): void {
@@ -65,13 +68,16 @@ function bot(i: number): void {
             best = o;
           }
         }
-        if (best && bd < 1500) {
+        if (best && bd < (passive ? 4000 : 1500)) {
           const dx = best[1] - x;
           const dz = best[3] - z;
           const dy = best[2] + 56 - (y + 64);
           yaw = Math.atan2(-dx, -dz) + (Math.random() - 0.5) * 0.06;
           pitch = Math.atan2(dy, Math.hypot(dx, dz)) + (Math.random() - 0.5) * 0.04;
-          if (t % 50 < 20) buttons |= BTN.ATTACK;
+          if (passive) {
+            // close in to ~320 units, then strafe slowly in view
+            buttons = bd > 320 ? BTN.FWD : (Math.floor(t / 70) + i) % 2 ? BTN.LEFT | BTN.WALK : BTN.RIGHT | BTN.WALK;
+          } else if (t % 50 < 20) buttons |= BTN.ATTACK;
         } else buttons |= BTN.FWD;
       }
       cmds.push(encodeCmd({ seq: ++seq, buttons, yaw, pitch, weapon: 0, interp: Math.max(0, serverTime - 100) }));

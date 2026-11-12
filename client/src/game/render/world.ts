@@ -62,7 +62,8 @@ function materialFor(mat: Mat, quality: 'high' | 'low'): THREE.Material {
     }
     case 'eitri': {
       const t = TEX.eitri();
-      return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.35, transparent: true, alphaTest: 0.5, roughness: 0.5 });
+      // painted mural: transparent mark with a soft shadow, no square behind it
+      return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.45, transparent: true, alphaTest: 0.02, depthWrite: false, roughness: 0.6 });
     }
     case 'bulldog': {
       const t = TEX.bulldog();

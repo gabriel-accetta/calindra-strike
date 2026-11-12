@@ -866,7 +866,7 @@ export class ClientGame {
     const [ldx, ldy] = this.input.takeLook();
     this.updateCamera(dt);
     this.updateRemotes(dt);
-    for (const a of this.airdrops.values()) a.update(dt, this.elapsed);
+    for (const a of this.airdrops.values()) a.update(dt, this.elapsed, this.camera.position);
     this.effects.update(dt);
     this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - dt * 60);
     this.muzzleLight.position.copy(this.camera.position).add(v3.set(0, 0, -40).applyQuaternion(this.camera.quaternion));

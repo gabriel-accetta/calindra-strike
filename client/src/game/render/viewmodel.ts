@@ -56,6 +56,8 @@ export class ViewModel {
   private kick = 0;
   private swing = 0;
   private swingHeavy = false;
+  private readonly baseRot = new THREE.Euler();
+  private readonly basePos = new THREE.Vector3();
   private readonly sleeve: THREE.MeshStandardMaterial;
   private readonly hemi: THREE.HemisphereLight;
   private readonly sun: THREE.DirectionalLight;
@@ -131,6 +133,8 @@ export class ViewModel {
       m.group.position.set(6, -6.4, -13);
       m.group.rotation.set(0, 0.045, 0);
     }
+    this.baseRot.copy(m.group.rotation);
+    this.basePos.copy(m.group.position);
     m.muzzle.add(this.flash);
     this.kickGroup.add(m.group);
   }
@@ -186,12 +190,23 @@ export class ViewModel {
     this.kickGroup.position.set(0, this.kick * 0.4, this.kick * 2.4);
     this.kickGroup.rotation.set(this.kick * 0.09 + tilt * 0.3, 0, -tilt);
 
-    if (this.swing > 0) {
-      this.swing = Math.max(0, this.swing - dt * (this.swingHeavy ? 2.4 : 4));
-      const s = Math.sin((1 - this.swing) * Math.PI);
-      this.kickGroup.rotation.x -= s * (this.swingHeavy ? 1.3 : 0.9);
-      this.kickGroup.rotation.y += s * 0.5;
-      this.kickGroup.position.z -= s * 6;
+    if (this.model) {
+      // hammer swing pivots around the grip: head comes down across the centre of the view
+      const g = this.model.group;
+      g.rotation.copy(this.baseRot);
+      g.position.copy(this.basePos);
+      if (this.swing > 0) {
+        this.swing = Math.max(0, this.swing - dt * (this.swingHeavy ? 2.4 : 4));
+        const t = 1 - this.swing;
+        const s = Math.sin(t * Math.PI);
+        const wind = this.swingHeavy ? 1.35 : 1.05;
+        g.rotation.x -= s * wind;
+        g.rotation.y += s * 0.55;
+        g.rotation.z += s * 0.35;
+        g.position.x -= s * 4.5;
+        g.position.y += s * 1.5;
+        g.position.z -= s * 3;
+      }
     }
 
     if (this.flashT > 0) {
