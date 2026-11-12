@@ -1,7 +1,7 @@
 import { PRIMARY_CHOICES, TEAMS, type WeaponId, weaponDef } from '@calindra-strike/shared';
 import type { PodiumData, TeamState } from '../game/client.ts';
 import { CROSSHAIR_COLORS, type Settings, saveSettings } from '../settings.ts';
-import { bulldogLogo, h } from './dom.ts';
+import { gameLogo, h } from './dom.ts';
 
 export interface OverlayHooks {
   resume(): void;
@@ -32,7 +32,7 @@ export class Overlays {
     const play = h('button', { class: 'btn btn-primary', type: 'button', text: 'clique para jogar', onclick: () => hooks.resume() });
     this.click = h('div', { class: 'overlay' }, [
       h('div', { class: 'click-to-play' }, [
-        bulldogLogo('bulldog cta-logo'),
+        gameLogo('game-logo cta-logo'),
         h('h2', { class: 'wordmark', text: 'pronto?' }),
         h('p', { text: 'Você vai cair do céu. Planeje com WASD e escolha onde pousar.' }),
         play,
@@ -41,7 +41,7 @@ export class Overlays {
     ]);
     this.menu = h('div', { class: 'overlay hidden' }, [this.buildMenu()]);
     this.podium = h('div', { class: 'podium-ui hidden' }, [
-      h('div', { class: 'head' }, [bulldogLogo('bulldog podium-logo'), this.podiumLabel, this.podiumTitle, this.podiumScore]),
+      h('div', { class: 'head' }, [gameLogo('game-logo podium-logo'), this.podiumLabel, this.podiumTitle, this.podiumScore]),
       h('div', {}, [this.podiumCards, this.podiumNext]),
     ]);
     root.append(this.podium, this.click, this.menu);

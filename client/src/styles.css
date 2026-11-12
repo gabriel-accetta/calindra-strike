@@ -65,10 +65,10 @@ button {
 
 /* ------------------------------------------------------------------ brand */
 
-.bulldog {
+.game-logo {
   display: block;
   flex: none;
-  filter: drop-shadow(0 0 22px rgba(157, 232, 43, 0.45));
+  filter: drop-shadow(0 0 22px rgba(190, 251, 26, 0.45));
   user-select: none;
 }
 

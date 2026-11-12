@@ -65,8 +65,8 @@ function materialFor(mat: Mat, quality: 'high' | 'low'): THREE.Material {
       // painted mural: transparent mark with a soft shadow, no square behind it
       return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.45, transparent: true, alphaTest: 0.02, depthWrite: false, roughness: 0.6 });
     }
-    case 'bulldog': {
-      const t = TEX.bulldog();
+    case 'logo': {
+      const t = TEX.logo();
       return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.7, roughness: 0.5 });
     }
     case 'plant':
@@ -247,7 +247,7 @@ export function buildWorld(map: MapDef, scene: THREE.Scene, quality: 'high' | 'l
     geo.setIndex(bk.idx);
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, materialFor(mat, quality));
-    const caster = !['glass', 'lime', 'screen', 'ground', 'carpet', 'eitri', 'bulldog'].includes(mat);
+    const caster = !['glass', 'lime', 'screen', 'ground', 'carpet', 'eitri', 'logo'].includes(mat);
     mesh.castShadow = caster;
     mesh.receiveShadow = mat !== 'lime' && mat !== 'glass';
     if (mat === 'glass') mesh.renderOrder = 5;

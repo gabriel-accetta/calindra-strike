@@ -1,6 +1,7 @@
 /** Official brand artwork (served from /public/brand). Preloaded before any texture is built. */
 export const BRAND = {
-  bulldog: '/brand/bulldog-lime-512.png', // Calindra Strike logo (lime line art, transparent)
+  logo: '/brand/logo.png', // Calindra Strike logo, transparent background
+  logoSmall: '/brand/logo-256.png',
   eitri: '/brand/eitri-mark.png', // official Eitri mark, transparent background
   eitriDark: '/brand/eitri-mark-dark.png', // same mark in dark ink, for lime surfaces
   eitriSmall: '/brand/eitri-mark-64.png',
@@ -24,10 +25,10 @@ function load(src: string): Promise<void> {
 let pending: Promise<void> | null = null;
 
 export function loadBrand(): Promise<void> {
-  pending ??= Promise.all([load(BRAND.bulldog), load(BRAND.eitri), load(BRAND.eitriDark)]).then(() => undefined);
+  pending ??= Promise.all([load(BRAND.logo), load(BRAND.eitri), load(BRAND.eitriDark)]).then(() => undefined);
   return pending;
 }
 
-export function brandImage(key: 'bulldog' | 'eitri' | 'eitriDark'): HTMLImageElement | null {
+export function brandImage(key: 'logo' | 'eitri' | 'eitriDark'): HTMLImageElement | null {
   return images.get(BRAND[key]) ?? null;
 }

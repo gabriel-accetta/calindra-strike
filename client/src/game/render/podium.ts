@@ -1,7 +1,7 @@
 import { type ResultRow, WEAPON } from '@calindra-strike/shared';
 import * as THREE from 'three';
 import { Avatar } from './avatar.ts';
-import { canvasTexture, drawBulldog, drawEitri } from './textures.ts';
+import { canvasTexture, drawEitri, drawLogo } from './textures.ts';
 
 const PLACES = [
   { x: 0, h: 64, color: '#ffd23f', label: '1' },
@@ -56,7 +56,7 @@ function wallTexture(): THREE.CanvasTexture {
       g.fillStyle = grd;
       g.fillRect(0, 0, w, h);
       // brand tiles either side of the winner: Calindra Strike × Eitri
-      drawBulldog(g, w * 0.3, h * 0.68, 210, true);
+      drawLogo(g, w * 0.3, h * 0.68, 210, true);
       drawEitri(g, w * 0.7, h * 0.68, 210, { tile: true });
     },
     false,

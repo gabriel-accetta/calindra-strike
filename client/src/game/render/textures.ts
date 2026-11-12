@@ -58,7 +58,7 @@ function blotches(g: CanvasRenderingContext2D, s: number, n: number, alpha: numb
 /**
  * Official Eitri mark on a transparent background.
  * `dark` swaps to dark ink (lime surfaces), `halo` adds a soft shadow so it reads on light walls,
- * `tile` puts it on the same glowing dark tile used for the bulldog.
+ * `tile` puts it on the same glowing dark tile used for the game logo.
  */
 export function drawEitri(
   g: CanvasRenderingContext2D,
@@ -93,24 +93,24 @@ export function drawEitri(
   g.restore();
 }
 
-/** Calindra Strike bulldog (lime line art), optionally on a dark glowing tile. */
-export function drawBulldog(g: CanvasRenderingContext2D, cx: number, cy: number, size: number, tile = false): void {
+/** Calindra Strike logo (transparent), optionally on a dark glowing tile. */
+export function drawLogo(g: CanvasRenderingContext2D, cx: number, cy: number, size: number, tile = false): void {
   if (tile) {
     g.save();
-    g.shadowColor = 'rgba(157,232,43,0.65)';
+    g.shadowColor = 'rgba(190,251,26,0.6)';
     g.shadowBlur = size * 0.25;
     g.fillStyle = '#131312';
     g.beginPath();
     g.roundRect(cx - size / 2, cy - size / 2, size, size, size * 0.24);
     g.fill();
     g.restore();
-    g.strokeStyle = 'rgba(157,232,43,0.55)';
+    g.strokeStyle = 'rgba(190,251,26,0.55)';
     g.lineWidth = Math.max(2, size * 0.012);
     g.stroke();
   }
-  const img = brandImage('bulldog');
+  const img = brandImage('logo');
   if (!img) return;
-  const s = tile ? size * 0.78 : size;
+  const s = tile ? size * 0.76 : size;
   g.drawImage(img, cx - s / 2, cy - s / 2, s, s);
 }
 
@@ -341,7 +341,7 @@ export const TEX: Record<string, () => THREE.CanvasTexture> = {
         grd.addColorStop(1, 'rgba(165,250,0,0)');
         g.fillStyle = grd;
         g.fillRect(0, 0, w, h);
-        drawBulldog(g, 122, h / 2, 190, true);
+        drawLogo(g, 122, h / 2, 190, true);
         g.fillStyle = '#f0f0f0';
         g.font = '800 50px "Inter Variable", Inter, sans-serif';
         g.fillText('calindra', 236, h / 2 - 12);
@@ -365,21 +365,21 @@ export const TEX: Record<string, () => THREE.CanvasTexture> = {
       },
       false,
     ),
-  bulldog: () =>
+  logo: () =>
     canvasTexture(
       512,
       (g, s) => {
         g.fillStyle = '#131312';
         g.fillRect(0, 0, s, s);
         const grd = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s * 0.6);
-        grd.addColorStop(0, 'rgba(157,232,43,0.22)');
-        grd.addColorStop(1, 'rgba(157,232,43,0)');
+        grd.addColorStop(0, 'rgba(190,251,26,0.22)');
+        grd.addColorStop(1, 'rgba(190,251,26,0)');
         g.fillStyle = grd;
         g.fillRect(0, 0, s, s);
-        g.strokeStyle = '#9de82b';
+        g.strokeStyle = '#befb1a';
         g.lineWidth = 10;
         g.strokeRect(5, 5, s - 10, s - 10);
-        drawBulldog(g, s / 2, s / 2, s * 0.8);
+        drawLogo(g, s / 2, s / 2, s * 0.8);
       },
       false,
     ),
@@ -402,5 +402,5 @@ export const TEX_SCALE: Record<string, number> = {
   sofa: 64,
   screen: 0,
   eitri: 0,
-  bulldog: 0,
+  logo: 0,
 };

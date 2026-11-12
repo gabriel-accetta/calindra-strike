@@ -26,9 +26,9 @@ export function svg(markup: string): SVGSVGElement {
   return t.content.firstElementChild as SVGSVGElement;
 }
 
-/** Calindra Strike bulldog logo. */
-export function bulldogLogo(cls = 'bulldog'): HTMLImageElement {
-  return h('img', { class: cls, src: BRAND.bulldog, alt: 'Calindra Strike', width: 512, height: 512, draggable: 'false' });
+/** Calindra Strike logo. */
+export function gameLogo(cls = 'game-logo'): HTMLImageElement {
+  return h('img', { class: cls, src: BRAND.logoSmall, alt: 'Calindra Strike', width: 256, height: 256, draggable: 'false' });
 }
 
 /** Official Eitri app icon. */

@@ -22,10 +22,10 @@ export function buildForja(): MapDef {
     b.add(-H - 32, 0, -H - 32, H, 288, -H, 'concrete');
     b.add(-H - 32, 288, -H - 32, H, 3200, -H, 'clip', { visible: false, shoot: true });
     b.deco(-H, 268, -H, H, 276, -H + 3);
-    // big brand banners on every perimeter wall: Eitri icon flanked by the bulldog
+    // big brand banners on every perimeter wall: Eitri mark flanked by the game logo
     b.deco(-90, 60, -H, 90, 240, -H + 2, 'eitri');
-    b.deco(-620, 70, -H, -460, 230, -H + 2, 'bulldog');
-    b.deco(460, 70, -H, 620, 230, -H + 2, 'bulldog');
+    b.deco(-620, 70, -H, -460, 230, -H + 2, 'logo');
+    b.deco(460, 70, -H, 620, 230, -H + 2, 'logo');
   });
 
   // --- center: the anvil ---

@@ -120,7 +120,7 @@ export function buildEscritorio(): MapDef {
 
     // brand walls
     b.deco(X - 2, 50, -330, X, 210, -170, 'eitri');
-    b.deco(-200, 40, -Z, -40, 200, -Z + 2, 'bulldog');
+    b.deco(-200, 40, -Z, -40, 200, -Z + 2, 'logo');
   });
 
   return {

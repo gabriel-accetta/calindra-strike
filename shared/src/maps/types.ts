@@ -20,7 +20,7 @@ export type Mat =
   | 'screen'
   | 'sofa'
   | 'eitri' // official Eitri icon banner
-  | 'bulldog'; // Calindra Strike logo banner
+  | 'logo'; // Calindra Strike logo banner
 
 export interface Box {
   min: Vec3;
