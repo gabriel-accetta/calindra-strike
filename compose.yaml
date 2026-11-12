@@ -19,7 +19,7 @@ services:
       WARMUP_MIN_PLAYERS: ${WARMUP_MIN_PLAYERS:-2}
       GAME_MODE: ${GAME_MODE:-mixed}
       TDM_SCORE_LIMIT: ${TDM_SCORE_LIMIT:-50}
-      BOT_FILL: ${BOT_FILL:-8}
+      BOT_FILL: ${BOT_FILL:-0}
       BOT_SKILL: ${BOT_SKILL:-45}
       JOIN_CODE: ${JOIN_CODE:-}
     stop_grace_period: 5s # SIGTERM: the server tells clients to reconnect, then exits

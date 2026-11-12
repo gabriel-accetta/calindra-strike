@@ -217,7 +217,7 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
         : status.phase === 'podium'
           ? `${status.map} · pódio`
           : `${status.map} · ${mode} · aquecimento`;
-    sTitle.textContent = status.players > 0 ? 'Partida rolando' : 'Arena vazia: bots te esperam';
+    sTitle.textContent = status.players > 0 ? 'Partida rolando' : 'Arena vazia: chegue primeiro';
     sSub.textContent = phase;
     sCount.textContent = `${status.players}/${status.maxPlayers} online${status.bots ? ` · ${status.bots} bots` : ''}`;
     codeField.classList.toggle('hidden', !status.codeRequired);
