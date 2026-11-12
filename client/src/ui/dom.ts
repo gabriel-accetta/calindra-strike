@@ -1,3 +1,5 @@
+import { BRAND } from '../brand.ts';
+
 type Attrs = Record<string, string | number | boolean | ((e: Event) => void) | undefined>;
 
 /** Tiny DOM builder. Text is always set via textContent: no HTML injection possible. */
@@ -24,8 +26,15 @@ export function svg(markup: string): SVGSVGElement {
   return t.content.firstElementChild as SVGSVGElement;
 }
 
-export const MARK_SVG =
-  '<svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="17" fill="#A5FA00"/><g fill="#131312" transform="translate(32 32)"><path d="M-5-25h10l-3 14h-10z"/><path d="M-5-25h10l-3 14h-10z" transform="rotate(90)"/><path d="M-5-25h10l-3 14h-10z" transform="rotate(180)"/><path d="M-5-25h10l-3 14h-10z" transform="rotate(270)"/><circle r="3.4"/></g></svg>';
+/** Calindra Strike bulldog logo. */
+export function bulldogLogo(cls = 'bulldog'): HTMLImageElement {
+  return h('img', { class: cls, src: BRAND.bulldog, alt: 'Calindra Strike', width: 512, height: 512, draggable: 'false' });
+}
+
+/** Official Eitri app icon. */
+export function eitriLogo(cls = 'eitri-icon'): HTMLImageElement {
+  return h('img', { class: cls, src: BRAND.eitriSmall, alt: 'Eitri', width: 64, height: 64, draggable: 'false' });
+}
 
 export const ICONS = {
   heart: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7z"/></svg>',

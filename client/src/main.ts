@@ -2,6 +2,7 @@ import '@fontsource-variable/inter';
 import '@fontsource/fragment-mono';
 import './styles.css';
 import { PROTOCOL_VERSION, type ServerMsg } from '@calindra-strike/shared';
+import { loadBrand } from './brand.ts';
 import { SERVER_WS } from './config.ts';
 import { ClientGame, type Welcome } from './game/client.ts';
 import { Connection } from './game/net.ts';
@@ -46,7 +47,7 @@ function waitWelcome(net: Connection, ms: number): Promise<Welcome> {
 async function play(s: Settings): Promise<void> {
   const net = new Connection(SERVER_WS);
   try {
-    await net.opened();
+    await Promise.all([net.opened(), loadBrand()]);
     net.send({ t: 'hello', v: PROTOCOL_VERSION, name: s.name, color: s.color, primary: s.primary, code: s.code });
     const welcome = await waitWelcome(net, 8000);
     stopLobby?.();
@@ -81,4 +82,5 @@ function start(net: Connection, s: Settings, welcome: Welcome): void {
   });
 }
 
+void loadBrand();
 lobby();

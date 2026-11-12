@@ -60,6 +60,14 @@ function materialFor(mat: Mat, quality: 'high' | 'low'): THREE.Material {
       const t = TEX.screen();
       return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.9, roughness: 0.3 });
     }
+    case 'eitri': {
+      const t = TEX.eitri();
+      return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.35, transparent: true, alphaTest: 0.5, roughness: 0.5 });
+    }
+    case 'bulldog': {
+      const t = TEX.bulldog();
+      return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.7, roughness: 0.5 });
+    }
     case 'plant':
       return new THREE.MeshStandardMaterial({ map: TEX.plant(), roughness: 0.9, vertexColors: true });
     default: {
@@ -238,7 +246,7 @@ export function buildWorld(map: MapDef, scene: THREE.Scene, quality: 'high' | 'l
     geo.setIndex(bk.idx);
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, materialFor(mat, quality));
-    const caster = mat !== 'glass' && mat !== 'lime' && mat !== 'screen' && mat !== 'ground' && mat !== 'carpet';
+    const caster = !['glass', 'lime', 'screen', 'ground', 'carpet', 'eitri', 'bulldog'].includes(mat);
     mesh.castShadow = caster;
     mesh.receiveShadow = mat !== 'lime' && mat !== 'glass';
     if (mat === 'glass') mesh.renderOrder = 5;

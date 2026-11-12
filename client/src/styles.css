@@ -65,11 +65,48 @@ button {
 
 /* ------------------------------------------------------------------ brand */
 
-.brand-mark {
-  width: 44px;
-  height: 44px;
+.bulldog {
+  display: block;
   flex: none;
-  filter: drop-shadow(0 0 18px rgba(165, 250, 0, 0.45));
+  filter: drop-shadow(0 0 22px rgba(157, 232, 43, 0.45));
+  user-select: none;
+}
+
+.hero-logo {
+  width: 104px;
+  height: 104px;
+}
+
+.cta-logo {
+  width: 128px;
+  height: 128px;
+}
+
+.podium-logo {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 6px;
+}
+
+.eitri-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+
+.lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.powered {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .wordmark {
@@ -215,8 +252,8 @@ input:focus-visible {
 .hero .top {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 36px;
+  gap: 18px;
+  margin-bottom: 26px;
 }
 
 .hero .top .label {

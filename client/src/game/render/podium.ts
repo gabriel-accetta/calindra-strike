@@ -1,7 +1,7 @@
 import { PLAYER_COLORS, type ResultRow, WEAPON } from '@calindra-strike/shared';
 import * as THREE from 'three';
 import { Avatar } from './avatar.ts';
-import { canvasTexture, drawMark } from './textures.ts';
+import { canvasTexture, drawBulldog, drawEitri } from './textures.ts';
 
 const PLACES = [
   { x: 0, h: 64, color: '#ffd23f', label: '1' },
@@ -55,7 +55,9 @@ function wallTexture(): THREE.CanvasTexture {
       grd.addColorStop(1, 'rgba(165,250,0,0)');
       g.fillStyle = grd;
       g.fillRect(0, 0, w, h);
-      drawMark(g, w / 2, h * 0.42, 300, '#112000', '#a5fa00');
+      // brand tiles either side of the winner: Calindra Strike × Eitri
+      drawBulldog(g, w * 0.3, h * 0.68, 210, true);
+      drawEitri(g, w * 0.7, h * 0.68, 210);
     },
     false,
     2048,
@@ -113,7 +115,7 @@ export class PodiumScene {
     floor.rotation.x = -Math.PI / 2;
     this.scene.add(floor);
 
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(1600, 800), new THREE.MeshBasicMaterial({ map: wallTexture() }));
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(1600, 800), new THREE.MeshBasicMaterial({ map: wallTexture(), fog: false }));
     wall.position.set(0, 330, -420);
     this.scene.add(wall);
 
@@ -166,6 +168,7 @@ export class PodiumScene {
       a.root.position.set(pl.x, pl.h, 0);
       a.root.rotation.y = Math.PI;
       a.root.scale.setScalar(1.15);
+      a.showTag(false); // names are on the result cards, in the player's colour
       this.stand.add(a.root);
       this.avatars.push(a);
     });

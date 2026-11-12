@@ -117,6 +117,10 @@ export function buildEscritorio(): MapDef {
     }
 
     b.point(-800, -300);
+
+    // brand walls
+    b.deco(X - 2, 50, -330, X, 210, -170, 'eitri');
+    b.deco(-200, 40, -Z, -40, 200, -Z + 2, 'bulldog');
   });
 
   return {

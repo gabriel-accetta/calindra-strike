@@ -1,6 +1,6 @@
 import { AIRDROP_HALF, type WeaponId, weaponDef } from '@calindra-strike/shared';
 import * as THREE from 'three';
-import { drawMark } from './textures.ts';
+import { drawEitri } from './textures.ts';
 
 let crateTex: THREE.CanvasTexture | null = null;
 
@@ -23,7 +23,7 @@ function crateTexture(): THREE.CanvasTexture {
     g.lineTo(i + 256, 0);
     g.fill();
   }
-  drawMark(g, 128, 128, 150, '#112000', '#a5fa00');
+  drawEitri(g, 128, 128, 150);
   crateTex = new THREE.CanvasTexture(c);
   crateTex.colorSpace = THREE.SRGBColorSpace;
   return crateTex;

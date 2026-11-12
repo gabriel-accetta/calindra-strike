@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { brandImage } from '../../brand.ts';
 
 type Draw = (g: CanvasRenderingContext2D, s: number) => void;
 
@@ -54,36 +55,31 @@ function blotches(g: CanvasRenderingContext2D, s: number, n: number, alpha: numb
   }
 }
 
-/** Pinwheel crosshair mark used across the brand. */
-export function drawMark(g: CanvasRenderingContext2D, cx: number, cy: number, size: number, fg: string, bg: string | null): void {
-  const k = size / 64;
-  g.save();
-  g.translate(cx, cy);
-  if (bg) {
-    g.fillStyle = bg;
-    const r = 17 * k;
-    const h = 30 * k;
-    g.beginPath();
-    g.roundRect(-h, -h, h * 2, h * 2, r);
-    g.fill();
-  }
-  g.fillStyle = fg;
-  for (let i = 0; i < 4; i++) {
+/** Official Eitri app icon (black squircle + lime pinwheel), centred at (cx, cy). */
+export function drawEitri(g: CanvasRenderingContext2D, cx: number, cy: number, size: number): void {
+  const img = brandImage('eitri');
+  if (img) g.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+}
+
+/** Calindra Strike bulldog (lime line art), optionally on a dark glowing tile. */
+export function drawBulldog(g: CanvasRenderingContext2D, cx: number, cy: number, size: number, tile = false): void {
+  if (tile) {
     g.save();
-    g.rotate((i * Math.PI) / 2);
+    g.shadowColor = 'rgba(157,232,43,0.65)';
+    g.shadowBlur = size * 0.25;
+    g.fillStyle = '#131312';
     g.beginPath();
-    g.moveTo(-5 * k, -25 * k);
-    g.lineTo(5 * k, -25 * k);
-    g.lineTo(2 * k, -11 * k);
-    g.lineTo(-8 * k, -11 * k);
-    g.closePath();
+    g.roundRect(cx - size / 2, cy - size / 2, size, size, size * 0.24);
     g.fill();
     g.restore();
+    g.strokeStyle = 'rgba(157,232,43,0.55)';
+    g.lineWidth = Math.max(2, size * 0.012);
+    g.stroke();
   }
-  g.beginPath();
-  g.arc(0, 0, 3.4 * k, 0, Math.PI * 2);
-  g.fill();
-  g.restore();
+  const img = brandImage('bulldog');
+  if (!img) return;
+  const s = tile ? size * 0.78 : size;
+  g.drawImage(img, cx - s / 2, cy - s / 2, s, s);
 }
 
 const S = 512;
@@ -174,7 +170,7 @@ export const TEX: Record<string, () => THREE.CanvasTexture> = {
         g.fillText('calindra', 70, h / 2 - 20);
         g.font = '500 30px "Fragment Mono", monospace';
         g.fillText('STRIKE // FORJA-07', 74, h / 2 + 38);
-        drawMark(g, w - 120, h / 2, 150, '#7dbd14', '#112000');
+        drawEitri(g, w - 120, h / 2, 190);
         g.fillStyle = 'rgba(17,32,0,0.6)';
         g.fillRect(0, 0, w, 14);
         g.fillRect(0, h - 14, w, 14);
@@ -208,7 +204,7 @@ export const TEX: Record<string, () => THREE.CanvasTexture> = {
         g.strokeStyle = 'rgba(255,255,255,0.08)';
         g.lineWidth = 2;
         g.strokeRect(2, 2, s - 4, s - 4);
-        drawMark(g, s * 0.7, s * 0.3, 70, '#1a1408', 'rgba(165,250,0,0.85)');
+        drawEitri(g, s * 0.72, s * 0.28, 74);
       },
       false,
     ),
@@ -311,19 +307,47 @@ export const TEX: Record<string, () => THREE.CanvasTexture> = {
         grd.addColorStop(1, 'rgba(165,250,0,0)');
         g.fillStyle = grd;
         g.fillRect(0, 0, w, h);
-        drawMark(g, 130, h / 2, 150, '#112000', '#a5fa00');
+        drawBulldog(g, 122, h / 2, 190, true);
         g.fillStyle = '#f0f0f0';
         g.font = '800 50px "Inter Variable", Inter, sans-serif';
-        g.fillText('calindra', 230, h / 2 - 10);
-        g.fillStyle = '#a5fa00';
-        g.fillText('strike', 230, h / 2 + 42);
-        g.fillStyle = 'rgba(240,240,240,0.5)';
-        g.font = '400 16px "Fragment Mono", monospace';
-        g.fillText('apps made easy · eitri.tech', 232, h / 2 + 80);
+        g.fillText('calindra', 236, h / 2 - 12);
+        g.fillStyle = '#9de82b';
+        g.fillText('strike', 236, h / 2 + 40);
+        drawEitri(g, 248, h / 2 + 84, 26);
+        g.fillStyle = 'rgba(240,240,240,0.6)';
+        g.font = '400 14px "Fragment Mono", monospace';
+        g.fillText('powered by eitri.tech', 268, h / 2 + 89, 230);
       },
       false,
       512,
       288,
+    ),
+  eitri: () =>
+    canvasTexture(
+      512,
+      (g, s) => {
+        g.clearRect(0, 0, s, s);
+        drawEitri(g, s / 2, s / 2, s);
+      },
+      false,
+    ),
+  bulldog: () =>
+    canvasTexture(
+      512,
+      (g, s) => {
+        g.fillStyle = '#131312';
+        g.fillRect(0, 0, s, s);
+        const grd = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s * 0.6);
+        grd.addColorStop(0, 'rgba(157,232,43,0.22)');
+        grd.addColorStop(1, 'rgba(157,232,43,0)');
+        g.fillStyle = grd;
+        g.fillRect(0, 0, s, s);
+        g.strokeStyle = '#9de82b';
+        g.lineWidth = 10;
+        g.strokeRect(5, 5, s - 10, s - 10);
+        drawBulldog(g, s / 2, s / 2, s * 0.8);
+      },
+      false,
     ),
 };
 
@@ -343,4 +367,6 @@ export const TEX_SCALE: Record<string, number> = {
   plant: 64,
   sofa: 64,
   screen: 0,
+  eitri: 0,
+  bulldog: 0,
 };

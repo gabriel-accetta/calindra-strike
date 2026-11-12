@@ -22,6 +22,10 @@ export function buildForja(): MapDef {
     b.add(-H - 32, 0, -H - 32, H, 288, -H, 'concrete');
     b.add(-H - 32, 288, -H - 32, H, 3200, -H, 'clip', { visible: false, shoot: true });
     b.deco(-H, 268, -H, H, 276, -H + 3);
+    // big brand banners on every perimeter wall: Eitri icon flanked by the bulldog
+    b.deco(-90, 60, -H, 90, 240, -H + 2, 'eitri');
+    b.deco(-620, 70, -H, -460, 230, -H + 2, 'bulldog');
+    b.deco(460, 70, -H, 620, 230, -H + 2, 'bulldog');
   });
 
   // --- center: the anvil ---
@@ -64,6 +68,8 @@ export function buildForja(): MapDef {
     // door frames glow so they read from far away
     b.deco(880, 128, z2, 976, 134, z2 + 3);
     b.deco(x1 - 3, 128, -1072, x1, 134, -976);
+    // warehouse branding facing the yard
+    b.deco(722, 36, z2, 862, 176, z2 + 2, 'eitri');
     // interior cover
     b.crate(800, -1120, 56);
     b.crate(1120, -880, 64);

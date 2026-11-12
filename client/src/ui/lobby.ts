@@ -1,7 +1,7 @@
 import { PLAYER_COLORS, PRIMARY_CHOICES, WEAPON, type WeaponId, sanitizeName, weaponDef } from '@calindra-strike/shared';
 import { SERVER_HTTP } from '../config.ts';
 import { type Settings, saveSettings } from '../settings.ts';
-import { ICONS, MARK_SVG, h, svg } from './dom.ts';
+import { ICONS, bulldogLogo, eitriLogo, h, svg } from './dom.ts';
 
 interface Status {
   players: number;
@@ -148,7 +148,13 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
 
   const key = (k: string, label: string) => h('div', {}, [h('span', { class: 'kbd', text: k }), label]);
   const hero = h('section', { class: 'hero' }, [
-    h('div', { class: 'top' }, [svg(MARK_SVG), h('span', { class: 'label', text: 'calindra × eitri · arena do escritório' })]),
+    h('div', { class: 'top' }, [
+      bulldogLogo('bulldog hero-logo'),
+      h('div', { class: 'lockup' }, [
+        h('span', { class: 'label', text: 'arena do escritório' }),
+        h('span', { class: 'powered' }, [eitriLogo(), 'calindra × eitri']),
+      ]),
+    ]),
     h('h1', { class: 'wordmark' }, ['calindra', h('br'), h('em', { text: 'strike' })]),
     h('p', { class: 'tagline' }, [
       'Tiro tático com alma de ',
