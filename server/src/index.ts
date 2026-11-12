@@ -16,7 +16,11 @@ const game = new Game({
   modes: cfg.modes,
   tdmLimit: cfg.tdmLimit,
   airdropFirstMs: cfg.airdropFirstMs,
+  botFill: cfg.botFill,
+  botSkill: cfg.botSkill,
 });
+
+const sockets = new Set<WebSocket>();
 
 const MAX_CONNECTIONS = cfg.maxPlayers + 8;
 const SEND_BUFFER_SOFT = 256 * 1024; // skip non-essential sends above this
@@ -120,6 +124,7 @@ server.on('upgrade', (req, socket, head) => {
 
 function onConnection(ws: WebSocket, ip: string): void {
   connections++;
+  sockets.add(ws);
   perIp.set(ip, (perIp.get(ip) ?? 0) + 1);
   let player: ServerPlayer | null = null;
   let strikes = 0;
@@ -177,18 +182,18 @@ function onConnection(ws: WebSocket, ip: string): void {
       if (!player) {
         if (msg.t !== 'hello') return strike(30, 'no hello');
         if (msg.v !== PROTOCOL_VERSION) {
-          send(JSON.stringify({ t: 'reject', reason: 'Versão desatualizada: recarregue a página' }), true);
+          send(JSON.stringify({ t: 'reject', reason: 'Versão desatualizada: recarregue a página', code: 'version' }), true);
           ws.close(4001, 'version');
           return;
         }
         if (!codeMatches(msg.code)) {
-          send(JSON.stringify({ t: 'reject', reason: 'Código de acesso inválido' }), true);
+          send(JSON.stringify({ t: 'reject', reason: 'Código de acesso inválido', code: 'code' }), true);
           ws.close(4003, 'code');
           return;
         }
-        const res = game.join(sanitizeName(msg.name), msg.color, msg.primary, (d) => send(d));
+        const res = game.join(sanitizeName(msg.name), msg.color, msg.primary, (d) => send(d), msg.token);
         if (typeof res === 'string') {
-          send(JSON.stringify({ t: 'reject', reason: res }), true);
+          send(JSON.stringify({ t: 'reject', reason: res, code: 'full' }), true);
           ws.close(4002, 'full');
           return;
         }
@@ -206,6 +211,9 @@ function onConnection(ws: WebSocket, ip: string): void {
           break;
         case 'loadout':
           game.setLoadout(player, msg.primary);
+          break;
+        case 'vote':
+          game.vote(player, msg.option);
           break;
         case 'team':
           game.switchTeam(player, msg.team);
@@ -229,6 +237,7 @@ function onConnection(ws: WebSocket, ip: string): void {
     clearTimeout(helloTimer);
     clearInterval(heartbeat);
     connections--;
+    sockets.delete(ws);
     const n = (perIp.get(ip) ?? 1) - 1;
     if (n <= 0) perIp.delete(ip);
     else perIp.set(ip, n);
@@ -263,7 +272,7 @@ setInterval(() => {
 }, 60_000).unref();
 
 server.listen(cfg.port, cfg.host, () => {
-  log(`calindra-strike server on ${cfg.host}:${cfg.port}`, `origins=${[...cfg.allowedOrigins].join(',')}`, `code=${cfg.joinCode ? 'on' : 'off'}`, `modes=${cfg.modes}`, `tdmLimit=${cfg.tdmLimit}`);
+  log(`calindra-strike server on ${cfg.host}:${cfg.port}`, `origins=${[...cfg.allowedOrigins].join(',')}`, `code=${cfg.joinCode ? 'on' : 'off'}`, `modes=${cfg.modes}`, `tdmLimit=${cfg.tdmLimit}`, `botFill=${cfg.botFill}`, `botSkill=${cfg.botSkill}`);
 });
 
 process.on('uncaughtException', (err) => {
@@ -274,10 +283,15 @@ process.on('unhandledRejection', (err) => {
   log('fatal rejection', err);
   process.exit(1);
 });
+let stopping = false;
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
   process.on(sig, () => {
-    log('shutting down');
+    if (stopping) return;
+    stopping = true;
+    log('shutting down: asking clients to reconnect');
+    // 1012 = service restart: clients show "reconectando" and come back on their own
+    for (const ws of sockets) ws.close(1012, 'restart');
     server.close();
-    process.exit(0);
+    setTimeout(() => process.exit(0), 400).unref();
   });
 }

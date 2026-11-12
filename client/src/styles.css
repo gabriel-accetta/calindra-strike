@@ -1691,3 +1691,107 @@ input:focus-visible {
   font-weight: 500;
   color: var(--text);
 }
+
+/* ------------------------------------------------------------------ map vote + reconnect */
+
+.vote {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(300px, 30vw);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.vote .label {
+  color: var(--lime);
+  margin-bottom: 2px;
+}
+
+.vote-option {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line-2);
+  background: rgba(19, 19, 18, 0.85);
+  text-align: left;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+
+.vote-option:hover {
+  border-color: rgba(165, 250, 0, 0.5);
+}
+
+.vote-option.mine {
+  border-color: var(--lime);
+  box-shadow: var(--glow);
+}
+
+.vote-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  z-index: 1;
+}
+
+.vote-text b {
+  font-size: 15px;
+}
+
+.vote-text small {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.vote-count {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--lime);
+  z-index: 1;
+}
+
+.vote-option .kbd {
+  z-index: 1;
+}
+
+.vote-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--lime);
+  transition: width 0.25s ease;
+}
+
+.scoreboard td.bot-tag {
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  border: 3px solid rgba(165, 250, 0, 0.2);
+  border-top-color: var(--lime);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

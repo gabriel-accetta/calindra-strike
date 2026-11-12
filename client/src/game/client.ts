@@ -26,6 +26,7 @@ import {
   STAND_EYE,
   type ServerMsg,
   type ShotInfo,
+  type VoteInfo,
   TICK_MS,
   TICK_RATE,
   WEAPON,
@@ -86,6 +87,7 @@ export interface Welcome {
   roster: RosterEntry[];
   match: MatchInfo;
   maxPlayers: number;
+  token: string;
 }
 
 export interface PodiumData {
@@ -95,6 +97,7 @@ export interface PodiumData {
   teams: number[];
   myTeam: number;
   colorFor: (r: ResultRow) => string;
+  vote: VoteInfo | null;
 }
 
 export interface TeamState {
@@ -106,8 +109,9 @@ export interface UiHooks {
   showClickToPlay(show: boolean): void;
   showMenu(show: boolean): void;
   showPodium(data: PodiumData | null, next: string): void;
+  updateVotes(counts: number[], mine: number): void;
   updatePodiumCountdown(seconds: number): void;
-  disconnected(reason: string): void;
+  disconnected(reason: string, code: number): void;
 }
 
 const STREAKS: Record<number, string> = {
@@ -140,7 +144,9 @@ export class ClientGame {
   private sunDir = new THREE.Vector3();
 
   readonly myId: number;
-  private readonly names = new Map<number, { name: string; personal: string; team: number }>();
+  private readonly names = new Map<number, { name: string; personal: string; team: number; bot: boolean }>();
+  private myVote = -1;
+  private voteCounts: number[] = [];
   private teamScores = [0, 0];
   private readonly online = new Set<number>();
   private readonly scores = new Map<number, { kills: number; deaths: number; ping: number; streak: number; hs: number }>();
@@ -231,9 +237,10 @@ export class ClientGame {
     net.onClose((code, reason) => {
       if (!this.running) return;
       this.running = false;
+      if (document.pointerLockElement) document.exitPointerLock();
       const why =
         reason === 'policy' ? 'Conexão encerrada pelo servidor (tráfego inválido).' : code === 1006 ? 'A conexão caiu.' : reason || 'Desconectado do servidor.';
-      this.ui.disconnected(why);
+      this.ui.disconnected(why, code);
     });
 
     this.renderer.domElement.addEventListener('click', () => {
@@ -278,7 +285,7 @@ export class ClientGame {
       this.ui.showMenu(false);
       this.ui.showClickToPlay(false);
       this.sfx.resume();
-    } else if (!this.chatOpen) {
+    } else if (!this.chatOpen && !this.podiumActive) {
       this.menuOpen = true;
       this.ui.showMenu(true);
     }
@@ -298,9 +305,9 @@ export class ClientGame {
 
   private setRoster(roster: RosterEntry[]): void {
     this.online.clear();
-    for (const [id, name, color, team] of roster) {
+    for (const [id, name, color, team, bot] of roster) {
       const prev = this.names.get(id);
-      this.names.set(id, { name, personal: PLAYER_COLORS[color] ?? '#f0f0f0', team });
+      this.names.set(id, { name, personal: PLAYER_COLORS[color] ?? '#f0f0f0', team, bot: bot === 1 });
       this.online.add(id);
       if (prev && prev.team !== team) this.dropAvatar(id); // rebuilt next snapshot in the new team colour
     }
@@ -393,6 +400,10 @@ export class ClientGame {
         break;
       case 'match':
         this.onMatch(m.match);
+        break;
+      case 'votes':
+        this.voteCounts = m.counts;
+        this.ui.updateVotes(m.counts, this.myVote);
         break;
       case 'pong': {
         const now = performance.now();
@@ -620,7 +631,21 @@ export class ClientGame {
     this.sfx.fanfare();
     this.sfx.setWind(0);
     const next = info.next ? `${getMap(info.next.map).name} · ${info.next.mode === 'tdm' ? 'team deathmatch' : 'todos contra todos'}` : '';
-    this.ui.showPodium({ mode: info.mode, featured, winner, teams: info.teams ?? [0, 0], myTeam: this.myTeam, colorFor }, next);
+    this.myVote = -1;
+    this.voteCounts = info.vote?.counts ?? [];
+    // free the mouse so people can click a map in the vote
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.ui.showMenu(false);
+    this.ui.showPodium({ mode: info.mode, featured, winner, teams: info.teams ?? [0, 0], myTeam: this.myTeam, colorFor, vote: info.vote ?? null }, next);
+  }
+
+  /** Map vote on the podium (keys 1-3 or click). */
+  vote(option: number): void {
+    if (!this.podiumActive || !this.match.vote || option < 0 || option >= this.match.vote.options.length) return;
+    this.myVote = option;
+    this.net.send({ t: 'vote', option });
+    this.ui.updateVotes(this.voteCounts, this.myVote);
+    this.sfx.click();
   }
 
   private exitPodium(): void {
@@ -628,12 +653,17 @@ export class ClientGame {
     this.hud.setVisible(true);
     this.ui.showPodium(null, '');
     this.effects.clear();
+    if (!this.input.locked) this.ui.showClickToPlay(true);
   }
 
   // ------------------------------------------------------------------ input
 
   private onKey(code: string, down: boolean, e: KeyboardEvent): boolean {
     if (this.chatOpen) return true;
+    if (this.podiumActive && down && /^(Digit|Numpad)[1-3]$/.test(code)) {
+      this.vote(Number(code.slice(-1)) - 1);
+      return true;
+    }
     if (code === 'Tab') {
       if (this.input.locked) e.preventDefault();
       this.scoreboardOpen = down;
@@ -1095,7 +1125,7 @@ export class ClientGame {
     for (const id of this.online) {
       const n = this.nameOf(id);
       const sc = this.scores.get(id) ?? { kills: 0, deaths: 0, ping: 0, streak: 0, hs: 0 };
-      rows.push({ id, name: n.name, color: n.color, team: n.team, kills: sc.kills, deaths: sc.deaths, hs: sc.hs, ping: sc.ping, me: id === this.myId });
+      rows.push({ id, name: n.name, color: n.color, team: n.team, bot: this.names.get(id)?.bot ?? false, kills: sc.kills, deaths: sc.deaths, hs: sc.hs, ping: sc.ping, me: id === this.myId });
     }
     rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || a.id - b.id);
     return rows;
@@ -1112,6 +1142,7 @@ export class ClientGame {
     this.sfx.dispose();
     this.world?.dispose();
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
     this.hud.root.remove();
     this.net.close();

@@ -1,4 +1,4 @@
-import { PRIMARY_CHOICES, TEAMS, type WeaponId, weaponDef } from '@calindra-strike/shared';
+import { PRIMARY_CHOICES, TEAMS, type VoteInfo, type WeaponId, getMap, weaponDef } from '@calindra-strike/shared';
 import type { PodiumData, TeamState } from '../game/client.ts';
 import { CROSSHAIR_COLORS, type Settings, saveSettings } from '../settings.ts';
 import { gameLogo, h } from './dom.ts';
@@ -7,6 +7,7 @@ export interface OverlayHooks {
   resume(): void;
   leave(): void;
   switchTeam(): void;
+  vote(option: number): void;
   settingsChanged(s: Settings): void;
 }
 
@@ -17,6 +18,9 @@ export class Overlays {
   private readonly podium: HTMLElement;
   private readonly podiumCards = h('div', { class: 'podium-cards' });
   private readonly podiumNext = h('div', { class: 'podium-next' });
+  private readonly voteBox = h('div', { class: 'vote glass hidden' });
+  private vote: VoteInfo | null = null;
+  private reconnectEl: HTMLElement | null = null;
   private readonly podiumLabel = h('div', { class: 'label', text: 'fim de partida' });
   private readonly podiumTitle = h('h2', { text: 'pódio' });
   private readonly podiumScore = h('div', { class: 'podium-score hidden' });
@@ -43,6 +47,7 @@ export class Overlays {
     this.podium = h('div', { class: 'podium-ui hidden' }, [
       h('div', { class: 'head' }, [gameLogo('game-logo podium-logo'), this.podiumLabel, this.podiumTitle, this.podiumScore]),
       h('div', {}, [this.podiumCards, this.podiumNext]),
+      this.voteBox,
     ]);
     root.append(this.podium, this.click, this.menu);
   }
@@ -164,6 +169,8 @@ export class Overlays {
   showPodium(data: PodiumData | null, next: string): void {
     this.podium.classList.toggle('hidden', !data);
     if (!data) return;
+    this.vote = data.vote;
+    this.updateVotes(data.vote?.counts ?? [], -1);
     this.nextMap = next;
     this.lastSeconds = -1;
     const tdm = data.mode === 'tdm';
@@ -202,7 +209,58 @@ export class Overlays {
   podiumCountdown(seconds: number): void {
     if (seconds === this.lastSeconds) return;
     this.lastSeconds = seconds;
-    this.podiumNext.replaceChildren('próxima partida em ', h('b', { text: `${seconds}s` }), this.nextMap ? ` · ${this.nextMap}` : '');
+    this.podiumNext.replaceChildren('próxima partida em ', h('b', { text: `${seconds}s` }), this.vote ? ' · vote no próximo mapa (1, 2 ou 3)' : this.nextMap ? ` · ${this.nextMap}` : '');
+  }
+
+  /** Map vote panel on the podium. */
+  updateVotes(counts: number[], mine: number): void {
+    const v = this.vote;
+    this.voteBox.classList.toggle('hidden', !v || v.options.length === 0);
+    if (!v) return;
+    const total = counts.reduce((a, b) => a + b, 0);
+    this.voteBox.replaceChildren(
+      h('div', { class: 'label', text: 'próxima partida · vote' }),
+      ...v.options.map((o, i) => {
+        const n = counts[i] ?? 0;
+        const pct = total ? Math.round((n / total) * 100) : 0;
+        return h(
+          'button',
+          {
+            class: `vote-option${i === mine ? ' mine' : ''}`,
+            type: 'button',
+            'aria-pressed': String(i === mine),
+            onclick: () => this.hooks.vote(i),
+          },
+          [
+            h('span', { class: 'kbd', text: String(i + 1) }),
+            h('span', { class: 'vote-text' }, [h('b', { text: getMap(o.map).name }), h('small', { text: o.mode === 'tdm' ? 'team deathmatch' : 'todos contra todos' })]),
+            h('span', { class: 'vote-count', text: `${n}` }),
+            h('i', { class: 'vote-bar', style: `width:${pct}%` }),
+          ],
+        );
+      }),
+    );
+  }
+
+  /** Small "reconnecting" panel while the client retries on its own. */
+  reconnecting(text: string | null, onBack?: () => void): void {
+    if (!text) {
+      this.reconnectEl?.remove();
+      this.reconnectEl = null;
+      return;
+    }
+    if (!this.reconnectEl) {
+      this.reconnectEl = h('div', { class: 'overlay' });
+      this.root.append(this.reconnectEl);
+    }
+    this.reconnectEl.replaceChildren(
+      h('div', { class: 'toast glass' }, [
+        h('div', { class: 'spinner' }),
+        h('h3', { text: 'reconectando…' }),
+        h('p', { text }),
+        onBack ? h('button', { class: 'btn', type: 'button', text: 'voltar ao lobby', onclick: onBack }) : null,
+      ]),
+    );
   }
 
   disconnected(reason: string, onBack: () => void): void {

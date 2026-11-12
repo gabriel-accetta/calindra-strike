@@ -2,7 +2,7 @@
  * World units follow the GoldSrc convention (1 unit ~ 1 inch) so movement
  * numbers read like a CS 1.6 server config.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 export const TICK_RATE = 60;
 export const TICK_DT = 1 / TICK_RATE;

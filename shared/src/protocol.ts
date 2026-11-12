@@ -7,12 +7,13 @@ export const MAX_MESSAGE_BYTES = 4096;
 // ------------------------------------------------------------ client -> server
 
 export type ClientMsg =
-  | { t: 'hello'; v: number; name: string; color: number; primary: WeaponId; code: string }
+  | { t: 'hello'; v: number; name: string; color: number; primary: WeaponId; code: string; token: string }
   | { t: 'in'; c: Cmd[] }
   | { t: 'loadout'; primary: WeaponId }
   | { t: 'ping'; c: number }
   | { t: 'chat'; text: string }
-  | { t: 'team'; team: number };
+  | { t: 'team'; team: number }
+  | { t: 'vote'; option: number };
 
 const isInt = (v: unknown, lo: number, hi: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
@@ -56,7 +57,9 @@ export function parseClientMessage(raw: string): ClientMsg | null {
       if (!isPrimary(o.primary)) return null;
       const code = o.code === undefined ? '' : o.code;
       if (!isStr(code, 64)) return null;
-      return { t: 'hello', v: o.v, name: o.name, color: o.color, primary: o.primary, code };
+      const token = o.token === undefined ? '' : o.token;
+      if (!isStr(token, 64) || !/^[0-9a-f]*$/.test(token)) return null;
+      return { t: 'hello', v: o.v, name: o.name, color: o.color, primary: o.primary, code, token };
     }
     case 'loadout':
       return isPrimary(o.primary) ? { t: 'loadout', primary: o.primary } : null;
@@ -64,6 +67,8 @@ export function parseClientMessage(raw: string): ClientMsg | null {
       return isStr(o.text, 400) && o.text.length > 0 ? { t: 'chat', text: o.text } : null;
     case 'team':
       return isInt(o.team, 0, 1) ? { t: 'team', team: o.team } : null;
+    case 'vote':
+      return isInt(o.option, 0, 7) ? { t: 'vote', option: o.option } : null;
     default:
       return null;
   }
@@ -107,6 +112,7 @@ export interface ResultRow {
   hs: number;
   best: number; // best streak
   team: number; // -1 in free-for-all
+  bot: number; // 1 for server bots
 }
 
 export interface MatchInfo {
@@ -118,7 +124,18 @@ export interface MatchInfo {
   limit: number; // TDM kill limit, 0 = timer only
   results?: ResultRow[];
   winner?: number; // TDM: winning team, -1 draw
-  next?: { map: number; mode: GameMode }; // podium: upcoming match
+  next?: { map: number; mode: GameMode }; // podium: upcoming match if nobody votes
+  vote?: VoteInfo; // podium: map vote for the next match
+}
+
+export interface VoteOption {
+  map: number;
+  mode: GameMode;
+}
+
+export interface VoteInfo {
+  options: VoteOption[];
+  counts: number[];
 }
 
 export type GameEvent =
@@ -132,8 +149,9 @@ export type GameEvent =
   | { k: 'team'; id: number; team: number; auto: number };
 
 export type ServerMsg =
-  | { t: 'welcome'; id: number; time: number; roster: RosterEntry[]; match: MatchInfo; maxPlayers: number }
-  | { t: 'reject'; reason: string }
+  | { t: 'welcome'; id: number; time: number; roster: RosterEntry[]; match: MatchInfo; maxPlayers: number; token: string }
+  | { t: 'reject'; reason: string; code?: string }
+  | { t: 'votes'; counts: number[] }
   | { t: 'snap'; time: number; ack: number; me: number[] | null; ps: number[][]; ad: number[][] }
   | { t: 'ev'; e: GameEvent[] }
   | { t: 'roster'; roster: RosterEntry[] }
@@ -142,7 +160,7 @@ export type ServerMsg =
   | { t: 'pong'; c: number; s: number }
   | { t: 'chat'; id: number; text: string };
 
-export type RosterEntry = [id: number, name: string, color: number, team: number];
+export type RosterEntry = [id: number, name: string, color: number, team: number, bot: number];
 
 export const round = (v: number, k: number): number => Math.round(v * k) / k;
 

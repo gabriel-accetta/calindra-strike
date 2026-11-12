@@ -19,6 +19,7 @@ export interface ScoreRow {
   ping: number;
   me: boolean;
   team: number;
+  bot: boolean;
 }
 
 export interface Marker {
@@ -344,7 +345,7 @@ export class Hud {
           h('td', { text: String(r.kills) }),
           h('td', { text: String(r.deaths) }),
           h('td', { text: String(r.hs) }),
-          h('td', { text: String(r.ping) }),
+          h('td', { class: r.bot ? 'bot-tag' : '', text: r.bot ? 'bot' : String(r.ping) }),
         ]);
       if (!teams) {
         this.sbBody.replaceChildren(...rows.map(line));

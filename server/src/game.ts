@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   AIRDROP_FALL_SPEED,
   AIRDROP_HALF,
@@ -13,6 +14,7 @@ import {
   type MatchInfo,
   type MatchPhase,
   PLAYER_COLORS,
+  PRIMARY_CHOICES,
   type PlayerState,
   RESPAWN_TICKS,
   RF_ALIVE,
@@ -26,6 +28,7 @@ import {
   type RosterEntry,
   SNAPSHOT_EVERY_TICKS,
   type ShotInfo,
+  type VoteOption,
   TICK_DT,
   TICK_MS,
   WEAPON,
@@ -46,6 +49,8 @@ import {
   spawnState,
   weaponDef,
 } from '@calindra-strike/shared';
+import { BOT_NAMES, type BotEnv, BotBrain } from './bot.ts';
+import { NavGrid } from './nav.ts';
 
 const HISTORY = 64; // ~1s of positions for lag compensation
 const MAX_QUEUE = 48;
@@ -54,6 +59,29 @@ const MAX_CMDS_PER_TICK = 8;
 const AIRDROP_EVERY_MS = 35_000;
 const AIRDROP_MAX_ACTIVE = 2;
 const TEAM_SWITCH_RESPAWN_TICKS = 90;
+const GHOST_TICKS = 90 * 60; // a dropped player can rejoin with their score for 90 s
+
+/** Navigation grids are pure functions of the map, shared by every game in the process. */
+const navCache = new Map<string, NavGrid>();
+function navFor(map: MapDef, world: CollisionWorld): NavGrid {
+  let n = navCache.get(map.id);
+  if (!n) {
+    n = new NavGrid(world, map);
+    navCache.set(map.id, n);
+  }
+  return n;
+}
+
+interface Ghost {
+  name: string;
+  team: number;
+  kills: number;
+  deaths: number;
+  headshots: number;
+  bestStreak: number;
+  matchId: number;
+  expires: number;
+}
 
 export type ModeSetting = 'mixed' | GameMode;
 
@@ -101,6 +129,8 @@ export interface ServerPlayer {
   histHead: number;
   events: GameEvent[];
   send: (data: string) => void;
+  brain: BotBrain | null; // server bot when set
+  token: string; // secret used to rejoin after a drop
 }
 
 interface Airdrop {
@@ -121,6 +151,8 @@ export interface GameOptions {
   modes?: ModeSetting;
   tdmLimit?: number; // team kills to win a TDM match early (0 = timer only)
   airdropFirstMs?: number;
+  botFill?: number; // keep at least this many players (bots fill the gap while someone is online)
+  botSkill?: number; // 0..1
   random?: () => number;
 }
 
@@ -138,6 +170,11 @@ export class Game {
   private winner = -1;
   private endPending = false;
   private rotationIndex = 0;
+  private matchId = 0;
+  private readonly ghosts = new Map<string, Ghost>();
+  private voteOptions: VoteOption[] = [];
+  private readonly votes = new Map<number, number>();
+  private botName = 0;
   private readonly rotation: { map: number; mode: GameMode }[];
   private airdrops: Airdrop[] = [];
   private nextAirdropAt = 0;
@@ -156,6 +193,8 @@ export class Game {
     this.map = getMap(0);
     this.world = this.worlds[0];
     this.applyRotation();
+    // build bot navigation up front so the first bot never causes a hitch mid-game
+    if ((opts.botFill ?? 0) > 0) getMaps().forEach((m, i) => navFor(m, this.worlds[i]));
   }
 
   get tdmLimit(): number {
@@ -221,8 +260,17 @@ export class Game {
 
   // ------------------------------------------------------------ lifecycle
 
-  join(name: string, color: number, primary: WeaponId, send: (data: string) => void): ServerPlayer | string {
-    if (this.players.size >= this.opts.maxPlayers) return 'Servidor cheio';
+  humanCount(): number {
+    let n = 0;
+    for (const p of this.players.values()) if (!p.brain) n++;
+    return n;
+  }
+
+  join(name: string, color: number, primary: WeaponId, send: (data: string) => void, token = ''): ServerPlayer | string {
+    if (this.humanCount() >= this.opts.maxPlayers) return 'Servidor cheio';
+    const ghost = token ? this.ghosts.get(token) : undefined;
+    if (ghost) this.ghosts.delete(token);
+    if (ghost && ghost.expires >= this.tick) name = ghost.name;
     const id = this.nextId++;
     const p: ServerPlayer = {
       id,
@@ -248,8 +296,18 @@ export class Game {
       histHead: 0,
       events: [],
       send,
+      brain: null,
+      token: randomBytes(16).toString('hex'),
     };
     if (this.mode === 'tdm') p.team = this.pickTeam();
+    if (ghost && ghost.expires >= this.tick && ghost.matchId === this.matchId) {
+      // same match: give the score back (and the side, if it is still free)
+      p.kills = ghost.kills;
+      p.deaths = ghost.deaths;
+      p.headshots = ghost.headshots;
+      p.bestStreak = ghost.bestStreak;
+      if (this.mode === 'tdm' && ghost.team >= 0 && this.teamSize(ghost.team) <= this.teamSize(1 - ghost.team)) p.team = ghost.team;
+    }
     this.players.set(id, p);
     p.send(
       JSON.stringify({
@@ -259,22 +317,180 @@ export class Game {
         roster: this.roster(),
         match: this.matchInfo(),
         maxPlayers: this.opts.maxPlayers,
+        token: p.token,
       }),
     );
     this.broadcastRoster();
     this.emit({ k: 'join', id });
     this.scoreDirty = true;
     if (this.phase !== 'podium') this.spawn(p);
+    this.fillBots();
     if (this.phase === 'warmup' && this.players.size >= this.opts.warmupMinPlayers) this.startMatch();
     return p;
   }
 
   leave(id: number): void {
-    if (!this.players.delete(id)) return;
+    const p = this.players.get(id);
+    if (!p || !this.players.delete(id)) return;
+    this.votes.delete(id);
+    if (!p.brain && this.phase !== 'warmup') {
+      this.ghosts.set(p.token, {
+        name: p.name,
+        team: p.team,
+        kills: p.kills,
+        deaths: p.deaths,
+        headshots: p.headshots,
+        bestStreak: p.bestStreak,
+        matchId: this.matchId,
+        expires: this.tick + GHOST_TICKS,
+      });
+      if (this.ghosts.size > 200) this.ghosts.delete(this.ghosts.keys().next().value as string);
+    }
     this.emit({ k: 'leave', id });
-    this.broadcastRoster();
     this.scoreDirty = true;
+    this.fillBots();
+    this.broadcastRoster();
     if (this.players.size === 0) this.resetToWarmup();
+  }
+
+  // ------------------------------------------------------------ bots
+
+  private botList(): ServerPlayer[] {
+    return [...this.players.values()].filter((p) => p.brain);
+  }
+
+  /** Bots top the server up to `botFill` players, but only while at least one human is online. */
+  private fillBots(): void {
+    const fill = Math.min(this.opts.botFill ?? 0, 64);
+    const humans = this.humanCount();
+    const want = humans === 0 ? 0 : Math.max(0, fill - humans);
+    let bots = this.botList();
+    let changed = false;
+    while (bots.length > want) {
+      const tdm = this.mode === 'tdm';
+      const bigger = this.teamSize(0) >= this.teamSize(1) ? 0 : 1;
+      const pick =
+        bots.find((b) => !b.alive && (!tdm || b.team === bigger)) ?? bots.find((b) => !tdm || b.team === bigger) ?? bots[0];
+      this.players.delete(pick.id);
+      this.votes.delete(pick.id);
+      this.emit({ k: 'leave', id: pick.id });
+      bots = this.botList();
+      changed = true;
+    }
+    while (bots.length < want) {
+      this.addBot();
+      bots = this.botList();
+      changed = true;
+    }
+    if (changed) {
+      this.broadcastRoster();
+      this.scoreDirty = true;
+    }
+  }
+
+  private addBot(): void {
+    const id = this.nextId++;
+    const taken = new Set([...this.players.values()].map((p) => p.name));
+    let name = '';
+    for (let i = 0; i < BOT_NAMES.length && !name; i++) {
+      const n = `BOT ${BOT_NAMES[(this.botName + i) % BOT_NAMES.length]}`;
+      if (!taken.has(n)) name = n;
+    }
+    this.botName++;
+    if (!name) name = `BOT ${id}`;
+    const skill = clamp((this.opts.botSkill ?? 0.5) + (this.random() - 0.5) * 0.3, 0, 1);
+    const p: ServerPlayer = {
+      id,
+      name,
+      color: Math.floor(this.random() * PLAYER_COLORS.length),
+      team: this.mode === 'tdm' ? this.pickTeam() : -1,
+      primaryChoice: PRIMARY_CHOICES[Math.floor(this.random() * PRIMARY_CHOICES.length)],
+      state: createPlayerState(),
+      alive: false,
+      respawnAt: 0,
+      queue: [],
+      lastSeq: -1,
+      tokens: CMD_BURST,
+      kills: 0,
+      deaths: 0,
+      headshots: 0,
+      streak: 0,
+      bestStreak: 0,
+      joinedAt: this.tick,
+      ping: 0,
+      lastChat: -Infinity,
+      history: [],
+      histHead: 0,
+      events: [],
+      send: () => {},
+      brain: new BotBrain(skill),
+      token: '',
+    };
+    this.players.set(id, p);
+    this.emit({ k: 'join', id });
+    if (this.phase !== 'podium') this.spawn(p);
+  }
+
+  private runBots(): void {
+    if (this.phase === 'podium') return;
+    const list = [...this.players.values()];
+    const env: BotEnv = {
+      world: this.world,
+      nav: navFor(this.map, this.world),
+      tick: this.tick,
+      now: this.now(),
+      mode: this.mode,
+      random: this.random,
+      players: list,
+      airdrops: this.airdrops,
+    };
+    for (const p of list) {
+      if (p.brain && p.alive && p.queue.length < 2) p.queue.push(p.brain.think(p, env));
+    }
+  }
+
+  // ------------------------------------------------------------ map vote
+
+  private buildVote(): void {
+    const setting = this.opts.modes ?? 'mixed';
+    const modes: GameMode[] = setting === 'mixed' ? ['tdm', 'ffa'] : [setting];
+    const all: VoteOption[] = [];
+    for (let map = 0; map < this.worlds.length; map++) for (const mode of modes) all.push({ map, mode });
+    let pool = all.filter((o) => !(o.map === this.mapIndex && o.mode === this.mode));
+    if (pool.length === 0) pool = all;
+    const def = this.rotation[(this.rotationIndex + 1) % this.rotation.length];
+    const first = pool.find((o) => o.map === def.map && o.mode === def.mode) ?? pool[0];
+    const rest = pool.filter((o) => o !== first);
+    const options = [first];
+    while (options.length < 3 && rest.length) options.push(rest.splice(Math.floor(this.random() * rest.length), 1)[0]);
+    this.voteOptions = options;
+    this.votes.clear();
+  }
+
+  private voteCounts(): number[] {
+    const counts = this.voteOptions.map(() => 0);
+    for (const [id, o] of this.votes) if (this.players.has(id) && counts[o] !== undefined) counts[o]++;
+    return counts;
+  }
+
+  vote(p: ServerPlayer, option: number): void {
+    if (this.phase !== 'podium' || p.brain || option < 0 || option >= this.voteOptions.length) return;
+    if (this.votes.get(p.id) === option) return;
+    this.votes.set(p.id, option);
+    const msg = JSON.stringify({ t: 'votes', counts: this.voteCounts() });
+    for (const q of this.players.values()) q.send(msg);
+  }
+
+  /** Most voted option wins; ties prefer the regular rotation, then chance. No votes: rotation. */
+  private voteWinner(): VoteOption {
+    const def = this.rotation[(this.rotationIndex + 1) % this.rotation.length];
+    if (this.voteOptions.length === 0) return def;
+    const counts = this.voteCounts();
+    const max = Math.max(...counts);
+    if (max <= 0) return this.voteOptions[0];
+    const top = counts.map((c, i) => (c === max ? i : -1)).filter((i) => i >= 0);
+    if (top.includes(0)) return this.voteOptions[0];
+    return this.voteOptions[top[Math.floor(this.random() * top.length)]];
   }
 
   input(p: ServerPlayer, cmds: Cmd[]): void {
@@ -322,6 +538,7 @@ export class Game {
       results: podium ? this.results : undefined,
       winner: podium ? this.winner : undefined,
       next: podium ? this.rotation[(this.rotationIndex + 1) % this.rotation.length] : undefined,
+      vote: podium ? { options: this.voteOptions, counts: this.voteCounts() } : undefined,
     };
   }
 
@@ -344,6 +561,7 @@ export class Game {
   }
 
   startMatch(): void {
+    this.matchId++;
     this.phase = 'live';
     this.phaseEnds = this.now() + this.opts.matchMs;
     this.airdrops = [];
@@ -373,18 +591,26 @@ export class Game {
         hs: p.headshots,
         best: p.bestStreak,
         team: p.team,
+        bot: p.brain ? 1 : 0,
       }));
     for (const p of this.players.values()) {
       p.alive = false;
       p.queue.length = 0;
     }
     this.airdrops = [];
+    this.buildVote();
     this.broadcastMatch();
   }
 
   private nextMap(): void {
+    const choice = this.voteWinner();
     this.rotationIndex++;
-    this.applyRotation();
+    this.mapIndex = choice.map;
+    this.map = getMap(choice.map);
+    this.world = this.worlds[choice.map];
+    this.mode = choice.mode;
+    this.voteOptions = [];
+    this.votes.clear();
     for (const p of this.players.values()) this.clearHistory(p);
     if (this.players.size >= this.opts.warmupMinPlayers) this.startMatch();
     else {
@@ -441,6 +667,7 @@ export class Game {
     const yaw = Math.atan2(best.x, best.z);
     spawnState(p.state, best.x, this.map.dropHeight, best.z, yaw, p.primaryChoice);
     p.alive = true;
+    p.brain?.reset();
     this.clearHistory(p);
   }
 
@@ -633,6 +860,9 @@ export class Game {
     if (this.phase === 'live' && (now >= this.phaseEnds || this.endPending)) this.endMatch();
     else if (this.phase === 'podium' && now >= this.phaseEnds) this.nextMap();
 
+    this.runBots();
+    if (this.tick % 600 === 0) for (const [k, g] of this.ghosts) if (g.expires < this.tick) this.ghosts.delete(k);
+
     // commands
     for (const p of this.players.values()) {
       p.tokens = Math.min(CMD_BURST, p.tokens + 1);
@@ -727,7 +957,7 @@ export class Game {
   }
 
   private roster(): RosterEntry[] {
-    return [...this.players.values()].map((p) => [p.id, p.name, p.color, p.team]);
+    return [...this.players.values()].map((p) => [p.id, p.name, p.color, p.team, p.brain ? 1 : 0]);
   }
 
   private broadcastRoster(): void {
@@ -741,7 +971,8 @@ export class Game {
       .slice(0, 3)
       .map((p) => ({ name: p.name, kills: p.kills }));
     return {
-      players: this.players.size,
+      players: this.humanCount(),
+      bots: this.players.size - this.humanCount(),
       maxPlayers: this.opts.maxPlayers,
       map: this.map.name,
       mode: this.mode,

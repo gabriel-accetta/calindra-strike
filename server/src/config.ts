@@ -11,6 +11,8 @@ export interface Config {
   modes: 'mixed' | 'ffa' | 'tdm';
   tdmLimit: number;
   airdropFirstMs: number;
+  botFill: number;
+  botSkill: number;
   trustProxy: boolean;
 }
 
@@ -50,6 +52,8 @@ export function loadConfig(): Config {
     modes: modeSetting(process.env.GAME_MODE),
     tdmLimit: int('TDM_SCORE_LIMIT', 50, 0, 1000),
     airdropFirstMs: int('AIRDROP_FIRST_SECONDS', 25, 1, 600) * 1000,
+    botFill: int('BOT_FILL', 8, 0, 64),
+    botSkill: int('BOT_SKILL', 50, 0, 100) / 100,
     trustProxy: process.env.TRUST_PROXY === '1',
   };
 }

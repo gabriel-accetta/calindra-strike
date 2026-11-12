@@ -12,6 +12,7 @@ interface Status {
   leaders: { name: string; kills: number }[];
   codeRequired: boolean;
   mode?: 'ffa' | 'tdm';
+  bots?: number;
   teams?: number[] | null;
 }
 
@@ -216,9 +217,9 @@ export function renderLobby(app: HTMLElement, settings: Settings, error: string,
         : status.phase === 'podium'
           ? `${status.map} · pódio`
           : `${status.map} · ${mode} · aquecimento`;
-    sTitle.textContent = status.players > 0 ? 'Partida rolando' : 'Arena vazia: chegue primeiro';
+    sTitle.textContent = status.players > 0 ? 'Partida rolando' : 'Arena vazia: bots te esperam';
     sSub.textContent = phase;
-    sCount.textContent = `${status.players}/${status.maxPlayers} online`;
+    sCount.textContent = `${status.players}/${status.maxPlayers} online${status.bots ? ` · ${status.bots} bots` : ''}`;
     codeField.classList.toggle('hidden', !status.codeRequired);
     leaders.replaceChildren(
       ...status.leaders
