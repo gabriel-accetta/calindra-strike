@@ -1,0 +1,222 @@
+import { BTN_MASK, CHAT_MAX_LEN, CMDS_PER_PACKET_MAX, NAME_MAX_LEN, PLAYER_COLORS } from './constants.ts';
+import type { Cmd, PlayerState } from './sim.ts';
+import { PRIMARY_CHOICES, WEAPON_COUNT, type WeaponId } from './weapons.ts';
+
+export const MAX_MESSAGE_BYTES = 4096;
+
+// ------------------------------------------------------------ client -> server
+
+export type ClientMsg =
+  | { t: 'hello'; v: number; name: string; color: number; primary: WeaponId; code: string }
+  | { t: 'in'; c: Cmd[] }
+  | { t: 'loadout'; primary: WeaponId }
+  | { t: 'ping'; c: number }
+  | { t: 'chat'; text: string };
+
+const isInt = (v: unknown, lo: number, hi: number): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+const isNum = (v: unknown, lo: number, hi: number): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
+const isPrimary = (v: unknown): v is WeaponId => typeof v === 'number' && (PRIMARY_CHOICES as readonly number[]).includes(v);
+
+/**
+ * Strict parser for everything a browser can send. Anything unexpected returns
+ * null and the server drops (and eventually disconnects) the sender.
+ */
+export function parseClientMessage(raw: string): ClientMsg | null {
+  if (raw.length > MAX_MESSAGE_BYTES) return null;
+  let m: unknown;
+  try {
+    m = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof m !== 'object' || m === null || Array.isArray(m)) return null;
+  const o = m as Record<string, unknown>;
+  switch (o.t) {
+    case 'in': {
+      const c = o.c;
+      if (!Array.isArray(c) || c.length < 1 || c.length > CMDS_PER_PACKET_MAX) return null;
+      const cmds: Cmd[] = [];
+      for (const e of c) {
+        if (!Array.isArray(e) || e.length !== 6) return null;
+        const [seq, buttons, yaw, pitch, weapon, interp] = e;
+        if (!isInt(seq, 0, 2 ** 31) || !isInt(buttons, 0, BTN_MASK) || !isNum(yaw, -10, 10) || !isNum(pitch, -2, 2)) return null;
+        if (!isInt(weapon, 0, 4) || !isNum(interp, 0, 1e13)) return null;
+        cmds.push({ seq, buttons, yaw, pitch, weapon, interp });
+      }
+      return { t: 'in', c: cmds };
+    }
+    case 'ping':
+      return isNum(o.c, 0, 1e13) ? { t: 'ping', c: o.c } : null;
+    case 'hello': {
+      if (!isInt(o.v, 0, 1000) || !isStr(o.name, 64) || !isInt(o.color, 0, PLAYER_COLORS.length - 1)) return null;
+      if (!isPrimary(o.primary)) return null;
+      const code = o.code === undefined ? '' : o.code;
+      if (!isStr(code, 64)) return null;
+      return { t: 'hello', v: o.v, name: o.name, color: o.color, primary: o.primary, code };
+    }
+    case 'loadout':
+      return isPrimary(o.primary) ? { t: 'loadout', primary: o.primary } : null;
+    case 'chat':
+      return isStr(o.text, 400) && o.text.length > 0 ? { t: 'chat', text: o.text } : null;
+    default:
+      return null;
+  }
+}
+
+function cleanText(raw: string, max: number, allow: RegExp): string {
+  return raw
+    .normalize('NFKC')
+    .replace(/[\p{C}\p{M}\p{Zl}\p{Zp}]/gu, '')
+    .replace(allow, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
+    .trim();
+}
+
+/** Allow-list: letters, numbers, spaces and a little punctuation. No control, bidi or combining chars. */
+export function sanitizeName(raw: string): string {
+  return cleanText(raw, NAME_MAX_LEN, /[^\p{L}\p{N} _\-.!?#*+]/gu);
+}
+
+export function sanitizeChat(raw: string): string {
+  return cleanText(raw, CHAT_MAX_LEN, /[^\p{L}\p{N}\p{P}\p{S} ]/gu);
+}
+
+export function encodeCmd(c: Cmd): number[] {
+  return [c.seq, c.buttons, round(c.yaw, 1e4), round(c.pitch, 1e4), c.weapon, Math.round(c.interp)];
+}
+
+// ------------------------------------------------------------ server -> client
+
+export type MatchPhase = 'warmup' | 'live' | 'podium';
+
+export interface ResultRow {
+  id: number;
+  name: string;
+  color: number;
+  kills: number;
+  deaths: number;
+  hs: number;
+  best: number; // best streak
+}
+
+export interface MatchInfo {
+  phase: MatchPhase;
+  map: number;
+  endsAt: number; // server time ms
+  results?: ResultRow[];
+}
+
+export type GameEvent =
+  | { k: 'shot'; id: number; w: number; o: number[]; e: number[]; h: number }
+  | { k: 'hit'; by: number; to: number; dmg: number; zone: number; hp: number; from: number[] }
+  | { k: 'kill'; by: number; to: number; w: number; hs: number; streak: number }
+  | { k: 'drop'; id: number; x: number; z: number; w: number }
+  | { k: 'loot'; id: number; drop: number; w: number }
+  | { k: 'join'; id: number }
+  | { k: 'leave'; id: number };
+
+export type ServerMsg =
+  | { t: 'welcome'; id: number; time: number; roster: RosterEntry[]; match: MatchInfo; maxPlayers: number }
+  | { t: 'reject'; reason: string }
+  | { t: 'snap'; time: number; ack: number; me: number[] | null; ps: number[][]; ad: number[][] }
+  | { t: 'ev'; e: GameEvent[] }
+  | { t: 'roster'; roster: RosterEntry[] }
+  | { t: 'score'; s: number[][] }
+  | { t: 'match'; match: MatchInfo }
+  | { t: 'pong'; c: number; s: number }
+  | { t: 'chat'; id: number; text: string };
+
+export type RosterEntry = [id: number, name: string, color: number];
+
+export const round = (v: number, k: number): number => Math.round(v * k) / k;
+
+// flags for the local player's packed state
+const F_GROUND = 1;
+const F_DUCK = 2;
+const F_JUMP = 4;
+const F_DROP = 8;
+const F_ATK = 16;
+const F_ATK2 = 32;
+
+export function packState(s: PlayerState): number[] {
+  const flags =
+    (s.onGround ? F_GROUND : 0) |
+    (s.ducked ? F_DUCK : 0) |
+    (s.jumpHeld ? F_JUMP : 0) |
+    (s.dropping ? F_DROP : 0) |
+    (s.attackHeld ? F_ATK : 0) |
+    (s.attack2Held ? F_ATK2 : 0);
+  return [
+    round(s.x, 1e3),
+    round(s.y, 1e3),
+    round(s.z, 1e3),
+    round(s.vx, 1e3),
+    round(s.vy, 1e3),
+    round(s.vz, 1e3),
+    flags,
+    Math.ceil(s.health),
+    Math.ceil(s.armor),
+    s.weapon,
+    s.lastWeapon,
+    s.primary,
+    s.tick,
+    s.nextFire,
+    s.reload,
+    s.deploy,
+    round(s.recoil, 1e4),
+    s.lastFire,
+    s.zoom,
+    s.protect,
+    ...s.mag,
+    ...s.reserve,
+  ];
+}
+
+export const PACKED_STATE_LEN = 20 + WEAPON_COUNT * 2;
+
+export function unpackState(a: number[], s: PlayerState): void {
+  s.x = a[0];
+  s.y = a[1];
+  s.z = a[2];
+  s.vx = a[3];
+  s.vy = a[4];
+  s.vz = a[5];
+  const f = a[6];
+  s.onGround = (f & F_GROUND) !== 0;
+  s.ducked = (f & F_DUCK) !== 0;
+  s.jumpHeld = (f & F_JUMP) !== 0;
+  s.dropping = (f & F_DROP) !== 0;
+  s.attackHeld = (f & F_ATK) !== 0;
+  s.attack2Held = (f & F_ATK2) !== 0;
+  s.health = a[7];
+  s.armor = a[8];
+  s.weapon = a[9] as WeaponId;
+  s.lastWeapon = a[10] as WeaponId;
+  s.primary = a[11] as WeaponId;
+  s.tick = a[12];
+  s.nextFire = a[13];
+  s.reload = a[14];
+  s.deploy = a[15];
+  s.recoil = a[16];
+  s.lastFire = a[17];
+  s.zoom = a[18];
+  s.protect = a[19];
+  for (let i = 0; i < WEAPON_COUNT; i++) {
+    s.mag[i] = a[20 + i];
+    s.reserve[i] = a[20 + WEAPON_COUNT + i];
+  }
+}
+
+// remote player flags
+export const RF_DUCK = 1;
+export const RF_DROP = 2;
+export const RF_ALIVE = 4;
+export const RF_PROTECT = 8;
+export const RF_GROUND = 16;
+export const RF_RELOAD = 32;
+export const RF_ZOOM = 64;

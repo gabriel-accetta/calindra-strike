@@ -1,0 +1,36 @@
+# Production game server. Reached only through Caddy (TLS) on the host.
+name: calindra-strike
+
+services:
+  game:
+    build: .
+    image: calindra-strike-server:latest
+    container_name: calindra-strike
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7350:7350" # loopback only: never published on the public interface
+    environment:
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS in .env}
+      TRUST_PROXY: "1"
+      MAX_PLAYERS: ${MAX_PLAYERS:-24}
+      MAX_PER_IP: ${MAX_PER_IP:-32}
+      MATCH_SECONDS: ${MATCH_SECONDS:-300}
+      PODIUM_SECONDS: ${PODIUM_SECONDS:-15}
+      WARMUP_MIN_PLAYERS: ${WARMUP_MIN_PLAYERS:-2}
+      JOIN_CODE: ${JOIN_CODE:-}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 384m
+    cpus: 1.5
+    ulimits:
+      nofile: { soft: 4096, hard: 4096 }
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks: [game]
+
+networks:
+  game: {}

@@ -1,0 +1,28 @@
+{
+  "name": "calindra-strike",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w @calindra-strike/server",
+    "dev:client": "npm run dev -w @calindra-strike/client",
+    "build:client": "npm run build -w @calindra-strike/client",
+    "build:server": "npm run build -w @calindra-strike/server",
+    "typecheck": "tsc -p shared && tsc -p server && tsc -p client",
+    "test": "vitest run",
+    "bots": "tsx tools/bots.ts",
+    "deploy:server": "deploy/deploy-server.sh"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
