@@ -15,8 +15,7 @@
     "build:server": "npm run build -w @calindra-strike/server",
     "typecheck": "tsc -p shared && tsc -p server && tsc -p client",
     "test": "vitest run",
-    "bots": "tsx tools/bots.ts",
-    "deploy:server": "deploy/deploy-server.sh"
+    "bots": "tsx tools/bots.ts"
   },
   "engines": {
     "node": ">=22"
